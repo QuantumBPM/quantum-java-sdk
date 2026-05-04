@@ -1,0 +1,224 @@
+package com.quantumbpm.client.bpmn;
+
+import com.quantumbpm.client.generated.ApiException;
+import com.quantumbpm.client.generated.api.BpmnApi;
+import com.quantumbpm.client.generated.api.DefaultApi;
+import com.quantumbpm.client.generated.model.BpmnInstanceChildrenResponse;
+import com.quantumbpm.client.generated.model.BpmnInstancePaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnInstanceState;
+import com.quantumbpm.client.generated.model.BpmnProcessSummaryPaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnProcessVersionPaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnResourceDetail;
+import com.quantumbpm.client.generated.model.BpmnResourcePaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnResourceSummaryPaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnUserTaskPaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnValidateResponse;
+import com.quantumbpm.client.generated.model.CorrelationKeys;
+import com.quantumbpm.client.generated.model.CreateBpmnResourceRequest;
+import com.quantumbpm.client.generated.model.GetBpmnInstanceVariables200Response;
+import com.quantumbpm.client.generated.model.PublishBpmnMessageRequest;
+import com.quantumbpm.client.generated.model.PublishBpmnSignalRequest;
+import com.quantumbpm.client.generated.model.StartBpmnInstanceRequest;
+import com.quantumbpm.client.generated.model.ThrowBpmnExternalJobErrorRequest;
+import com.quantumbpm.client.generated.model.UpdateBpmnInstanceVariablesRequest;
+import com.quantumbpm.client.generated.model.UpdateUserTaskAssignmentRequest;
+import com.quantumbpm.client.generated.model.UserTask;
+import com.quantumbpm.client.generated.model.ValidateBpmnResourceRequest;
+import com.quantumbpm.client.variables.Vars;
+
+import java.time.OffsetDateTime;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Wraps the BPMN engine endpoints — resources, instances, messaging, user
+ * tasks, processes — for a single project.
+ */
+public class BpmnClient {
+
+    private final DefaultApi defaultApi;
+    private final BpmnApi bpmnApi;
+    private final UUID projectId;
+
+    public BpmnClient(DefaultApi defaultApi, BpmnApi bpmnApi, UUID projectId) {
+        this.defaultApi = defaultApi;
+        this.bpmnApi = bpmnApi;
+        this.projectId = projectId;
+    }
+
+    public UUID projectId() {
+        return projectId;
+    }
+
+    // ------------------------------------------------------------ Resources
+
+    public BpmnResourceDetail createResource(String name, String xml) throws ApiException {
+        CreateBpmnResourceRequest body = new CreateBpmnResourceRequest();
+        body.setName(name);
+        body.setXml(xml);
+        return bpmnApi.createBpmnResource(projectId, body);
+    }
+
+    public BpmnResourceDetail updateResource(UUID resourceId, String name, String xml) throws ApiException {
+        CreateBpmnResourceRequest body = new CreateBpmnResourceRequest();
+        body.setName(name);
+        body.setXml(xml);
+        return bpmnApi.updateBpmnResource(projectId, resourceId, body);
+    }
+
+    public void deleteResource(UUID resourceId) throws ApiException {
+        bpmnApi.deleteBpmnResource(projectId, resourceId);
+    }
+
+    public BpmnResourceDetail getResource(UUID resourceId) throws ApiException {
+        return bpmnApi.getBpmnResource(projectId, resourceId);
+    }
+
+    public void deployResource(UUID resourceId) throws ApiException {
+        bpmnApi.deployBpmnResource(projectId, resourceId);
+    }
+
+    public BpmnValidateResponse validateXml(String xml) throws ApiException {
+        ValidateBpmnResourceRequest body = new ValidateBpmnResourceRequest();
+        body.setXml(xml);
+        return bpmnApi.validateBpmnXml(projectId, body);
+    }
+
+    public BpmnResourcePaginatedResponse listResources(int page, int pageSize) throws ApiException {
+        return bpmnApi.listBpmnResources(projectId, page, pageSize);
+    }
+
+    public BpmnResourceSummaryPaginatedResponse listLatestResources(int page, int pageSize) throws ApiException {
+        return bpmnApi.listLatestBpmnResources(projectId, page, pageSize);
+    }
+
+    public BpmnResourcePaginatedResponse listResourceVersions(String definitionsId, int page, int pageSize) throws ApiException {
+        return bpmnApi.listBpmnResourcesByDefinitionsID(projectId, definitionsId, page, pageSize);
+    }
+
+    // ------------------------------------------------------------ Instances
+
+    /** Launch a new BPMN process instance and return the workflow ID. */
+    public String startInstance(UUID processDefinitionId, Vars vars) throws ApiException {
+        StartBpmnInstanceRequest body = new StartBpmnInstanceRequest();
+        body.setProcessDefinitionID(processDefinitionId);
+        body.setVariables(vars.toWireMap());
+        var response = defaultApi.startBpmnInstance(projectId, body);
+        if (response == null || response.getWorkflowID() == null) {
+            throw new IllegalStateException("bpmn: startInstance returned no workflowID");
+        }
+        return response.getWorkflowID();
+    }
+
+    public BpmnInstanceState getInstance(String workflowId) throws ApiException {
+        return defaultApi.getBpmnInstance(projectId, workflowId);
+    }
+
+    public void cancelInstance(String workflowId) throws ApiException {
+        defaultApi.cancelBpmnInstance(projectId, workflowId);
+    }
+
+    public BpmnInstancePaginatedResponse listInstances(UUID definitionId, String status, Integer page, Integer pageSize) throws ApiException {
+        return defaultApi.listBpmnInstances(projectId, definitionId, status, page, pageSize);
+    }
+
+    public BpmnInstanceChildrenResponse getInstanceChildren(String workflowId) throws ApiException {
+        return bpmnApi.getBpmnInstanceChildren(projectId, workflowId);
+    }
+
+    public Vars getInstanceVariables(String workflowId) throws ApiException {
+        GetBpmnInstanceVariables200Response response = bpmnApi.getBpmnInstanceVariables(projectId, workflowId);
+        if (response == null || response.getVariables() == null) {
+            return new Vars();
+        }
+        return Vars.fromWireMap(response.getVariables());
+    }
+
+    public void updateInstanceVariables(String workflowId, Vars vars) throws ApiException {
+        UpdateBpmnInstanceVariablesRequest body = new UpdateBpmnInstanceVariablesRequest();
+        Map<String, Object> wire = vars.toWireMap();
+        body.setVariables(wire == null ? Map.of() : wire);
+        bpmnApi.updateBpmnInstanceVariables(projectId, workflowId, body);
+    }
+
+    public void resolveIncident(String workflowId, String incidentId, Vars vars) throws ApiException {
+        GetBpmnInstanceVariables200Response body = new GetBpmnInstanceVariables200Response();
+        if (vars != null) body.setVariables(vars.toWireMap());
+        bpmnApi.resolveBpmnIncident(projectId, workflowId, incidentId, body);
+    }
+
+    // ------------------------------------------------------------ Messaging
+
+    public void publishMessage(String name, Vars vars, CorrelationKeys correlationKeys, String ttl) throws ApiException {
+        PublishBpmnMessageRequest body = new PublishBpmnMessageRequest();
+        body.setMessageName(name);
+        body.setCorrelationKeys(correlationKeys);
+        body.setTtl(ttl);
+        if (vars != null) body.setVariables(vars.toWireMap());
+        bpmnApi.publishBpmnMessage(projectId, body);
+    }
+
+    public void publishMessage(String name, Vars vars) throws ApiException {
+        publishMessage(name, vars, null, null);
+    }
+
+    public void publishSignal(String name, Vars vars, String ttl) throws ApiException {
+        PublishBpmnSignalRequest body = new PublishBpmnSignalRequest();
+        body.setSignalName(name);
+        body.setTtl(ttl);
+        if (vars != null) body.setVariables(vars.toWireMap());
+        bpmnApi.publishBpmnSignal(projectId, body);
+    }
+
+    public void publishSignal(String name, Vars vars) throws ApiException {
+        publishSignal(name, vars, null);
+    }
+
+    // ----------------------------------------------------------- User tasks
+
+    public BpmnUserTaskPaginatedResponse listUserTasks(
+            String workflowId,
+            String status,
+            String assignee,
+            String candidateUser,
+            String candidateGroup,
+            Integer page,
+            Integer pageSize) throws ApiException {
+        return bpmnApi.listBpmnUserTasks(projectId, workflowId, status, assignee, candidateUser, candidateGroup, page, pageSize);
+    }
+
+    public BpmnUserTaskPaginatedResponse listUserTasksForCaller(int page, int pageSize) throws ApiException {
+        return bpmnApi.listBpmnUserTasksForCaller(projectId, page, pageSize);
+    }
+
+    public UserTask getUserTask(String executionKey) throws ApiException {
+        return bpmnApi.getBpmnUserTask(projectId, executionKey);
+    }
+
+    public UserTask updateUserTaskAssignment(String executionKey, UpdateUserTaskAssignmentRequest body) throws ApiException {
+        return bpmnApi.updateBpmnUserTaskAssignment(projectId, executionKey, body);
+    }
+
+    public void completeUserTask(String executionKey, Vars vars) throws ApiException {
+        GetBpmnInstanceVariables200Response body = new GetBpmnInstanceVariables200Response();
+        if (vars != null) body.setVariables(vars.toWireMap());
+        bpmnApi.completeBpmnUserTask(projectId, executionKey, body);
+    }
+
+    public void throwUserTaskError(String executionKey, String errorCode, Vars vars) throws ApiException {
+        ThrowBpmnExternalJobErrorRequest body = new ThrowBpmnExternalJobErrorRequest();
+        body.setErrorCode(errorCode);
+        if (vars != null) body.setVariables(vars.toWireMap());
+        bpmnApi.throwBpmnUserTaskError(projectId, executionKey, body);
+    }
+
+    // ------------------------------------------------------------ Processes
+
+    public BpmnProcessSummaryPaginatedResponse listProcesses(Integer page, Integer pageSize, String search, OffsetDateTime createdAfter) throws ApiException {
+        return bpmnApi.listBpmnProcesses(projectId, page, pageSize, search, createdAfter);
+    }
+
+    public BpmnProcessVersionPaginatedResponse listProcessVersions(String processId, Integer page, Integer pageSize, OffsetDateTime createdAfter) throws ApiException {
+        return bpmnApi.listBpmnProcessVersions(projectId, processId, page, pageSize, createdAfter);
+    }
+}

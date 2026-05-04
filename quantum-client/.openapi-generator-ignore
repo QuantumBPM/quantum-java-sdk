@@ -1,0 +1,8 @@
+# OpenAPI Generator's oneOf template emits invalid Java when a variant is a
+# parameterized type (e.g. Map<String, Object>, List<FeelValue>). Both of
+# these schemas hit that bug. We hand-write minimal stubs in
+# src/main/java/com/quantumbpm/client/generated/model/ that other generated
+# models reference as plain POJO field types — Jackson handles the
+# serialization transparently.
+**/model/FeelValue.java
+**/model/CorrelationKeys.java
