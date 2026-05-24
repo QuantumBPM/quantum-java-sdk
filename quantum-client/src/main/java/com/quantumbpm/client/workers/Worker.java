@@ -41,6 +41,7 @@ public class Worker {
     private static final Logger LOG = Logger.getLogger(Worker.class.getName());
     private static final Duration DEFAULT_POLL_TIMEOUT = Duration.parse("30s");
     private static final Duration DEFAULT_LOCK_DURATION = Duration.parse("30s");
+    private static final int DEFAULT_MAX_ERROR_MESSAGE_BYTES = 2048;
     private static final long POLL_ERROR_BACKOFF_MS = 2_000L;
     private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
@@ -48,6 +49,7 @@ public class Worker {
     private final BpmnApi bpmnApi;
     private final UUID projectId;
     private final String clientId;
+    private final int maxErrorMessageBytes;
 
     private final Map<String, Registration<?>> registrations = new HashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -56,10 +58,22 @@ public class Worker {
     private final AtomicReference<ExecutorService> dispatchExecutor = new AtomicReference<>();
 
     public Worker(DefaultApi defaultApi, BpmnApi bpmnApi, UUID projectId, String clientId) {
+        this(defaultApi, bpmnApi, projectId, clientId, DEFAULT_MAX_ERROR_MESSAGE_BYTES);
+    }
+
+    /**
+     * Same as {@link #Worker(DefaultApi, BpmnApi, UUID, String)} but lets the
+     * caller tune the byte cap on the auto-built WORKER_ERROR message attached
+     * when a handler throws a non-{@link BpmnError}. User-thrown BpmnError
+     * variables are not clamped. Pass {@code 0} or a negative number to use
+     * the default ({@value #DEFAULT_MAX_ERROR_MESSAGE_BYTES}).
+     */
+    public Worker(DefaultApi defaultApi, BpmnApi bpmnApi, UUID projectId, String clientId, int maxErrorMessageBytes) {
         this.defaultApi = defaultApi;
         this.bpmnApi = bpmnApi;
         this.projectId = projectId;
         this.clientId = (clientId == null || clientId.isBlank()) ? defaultClientId() : clientId;
+        this.maxErrorMessageBytes = maxErrorMessageBytes > 0 ? maxErrorMessageBytes : DEFAULT_MAX_ERROR_MESSAGE_BYTES;
     }
 
     public String clientId() {
@@ -202,7 +216,9 @@ public class Worker {
                 return;
             } catch (Throwable t) {
                 LOG.log(Level.SEVERE, "handler " + r.taskType + ": " + t.getMessage(), t);
-                throwError(raw, "WORKER_ERROR", new Vars().set("error", t.getMessage() == null ? t.toString() : t.getMessage()));
+                String rawMsg = t.getMessage() == null ? t.toString() : t.getMessage();
+                String message = clampWorkerErrorMessage(r.taskType, rawMsg);
+                throwError(raw, "WORKER_ERROR", new Vars().set("error", message));
                 return;
             }
             complete(raw, result == null ? new Vars() : result);
@@ -252,6 +268,38 @@ public class Worker {
         } catch (ApiException e) {
             LOG.log(Level.SEVERE, "throwError " + raw.getExecutionKey() + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * Shortens an unhandled handler exception's message to the configured
+     * byte budget. UTF-8 safe (cuts on code-point boundary). Logs a WARN
+     * and appends a truncation marker when it triggers. Package-private for
+     * tests.
+     */
+    String clampWorkerErrorMessage(String taskType, String msg) {
+        if (msg == null) {
+            return null;
+        }
+        byte[] bytes = msg.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (maxErrorMessageBytes <= 0 || bytes.length <= maxErrorMessageBytes) {
+            return msg;
+        }
+        String marker = "…[truncated, original " + bytes.length + " bytes]";
+        int markerBytes = marker.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        int budget = Math.max(0, maxErrorMessageBytes - markerBytes);
+        // Walk back from `budget` until we land on a UTF-8 lead byte so we
+        // don't emit half a multi-byte rune.
+        int cut = Math.min(budget, bytes.length);
+        while (cut > 0 && (bytes[cut] & 0xC0) == 0x80) {
+            cut--;
+        }
+        String prefix = new String(bytes, 0, cut, java.nio.charset.StandardCharsets.UTF_8);
+        LOG.log(
+            Level.WARNING,
+            "workers: WORKER_ERROR message truncated for task=" + taskType
+                + " from " + bytes.length + " to " + maxErrorMessageBytes + " bytes"
+        );
+        return prefix + marker;
     }
 
     @SuppressWarnings("unchecked")

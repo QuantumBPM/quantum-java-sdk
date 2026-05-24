@@ -118,8 +118,17 @@ public class BpmnClient {
         defaultApi.cancelBpmnInstance(projectId, workflowId);
     }
 
-    public BpmnInstancePaginatedResponse listInstances(UUID definitionId, String status, Integer page, Integer pageSize) throws ApiException {
-        return defaultApi.listBpmnInstances(projectId, definitionId, status, page, pageSize);
+    public BpmnInstancePaginatedResponse listInstances(
+            UUID definitionId,
+            String status,
+            Boolean hasIncident,
+            Boolean suspended,
+            OffsetDateTime createdAfter,
+            Integer page,
+            Integer pageSize
+    ) throws ApiException {
+        return defaultApi.listBpmnInstances(
+                projectId, definitionId, status, hasIncident, suspended, createdAfter, page, pageSize);
     }
 
     public BpmnInstanceChildrenResponse getInstanceChildren(String workflowId) throws ApiException {
