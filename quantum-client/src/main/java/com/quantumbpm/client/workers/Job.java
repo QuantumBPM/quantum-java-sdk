@@ -58,6 +58,15 @@ public final class Job<T> {
         return raw.getHeaders() == null ? Map.of() : raw.getHeaders();
     }
 
+    /**
+     * Caller-supplied correlation key inherited from the originating BPMN
+     * process. {@code null} when the instance was started without one. Use
+     * it for log correlation or downstream tracing.
+     */
+    public String businessId() {
+        return raw.getBusinessId();
+    }
+
     /** Underlying generated record for low-level access. */
     public ExternalJob raw() {
         return raw;

@@ -100,9 +100,20 @@ public class BpmnClient {
 
     /** Launch a new BPMN process instance and return the workflow ID. */
     public String startInstance(UUID processDefinitionId, Vars vars) throws ApiException {
+        return startInstance(processDefinitionId, vars, null);
+    }
+
+    /**
+     * Launch a new BPMN process instance, stamping it with a caller-supplied
+     * {@code businessId} correlation key (order number, ticket ID, etc.).
+     * The key is inherited by every child instance, external job, user task,
+     * and DMN execution emitted by the resulting process.
+     */
+    public String startInstance(UUID processDefinitionId, Vars vars, String businessId) throws ApiException {
         StartBpmnInstanceRequest body = new StartBpmnInstanceRequest();
         body.setProcessDefinitionID(processDefinitionId);
         body.setVariables(vars.toWireMap());
+        body.setBusinessId(businessId);
         var response = defaultApi.startBpmnInstance(projectId, body);
         if (response == null || response.getWorkflowID() == null) {
             throw new IllegalStateException("bpmn: startInstance returned no workflowID");
@@ -127,8 +138,22 @@ public class BpmnClient {
             Integer page,
             Integer pageSize
     ) throws ApiException {
+        return listInstances(definitionId, status, hasIncident, suspended, createdAfter, null, page, pageSize);
+    }
+
+    /** List instances filtered by a caller-supplied businessId correlation key. */
+    public BpmnInstancePaginatedResponse listInstances(
+            UUID definitionId,
+            String status,
+            Boolean hasIncident,
+            Boolean suspended,
+            OffsetDateTime createdAfter,
+            String businessId,
+            Integer page,
+            Integer pageSize
+    ) throws ApiException {
         return defaultApi.listBpmnInstances(
-                projectId, definitionId, status, hasIncident, suspended, createdAfter, page, pageSize);
+                projectId, definitionId, status, hasIncident, suspended, createdAfter, businessId, page, pageSize);
     }
 
     public BpmnInstanceChildrenResponse getInstanceChildren(String workflowId) throws ApiException {
@@ -193,7 +218,20 @@ public class BpmnClient {
             String candidateGroup,
             Integer page,
             Integer pageSize) throws ApiException {
-        return bpmnApi.listBpmnUserTasks(projectId, workflowId, status, assignee, candidateUser, candidateGroup, page, pageSize);
+        return listUserTasks(workflowId, status, assignee, candidateUser, candidateGroup, null, page, pageSize);
+    }
+
+    /** List user tasks filtered by a caller-supplied businessId correlation key. */
+    public BpmnUserTaskPaginatedResponse listUserTasks(
+            String workflowId,
+            String status,
+            String assignee,
+            String candidateUser,
+            String candidateGroup,
+            String businessId,
+            Integer page,
+            Integer pageSize) throws ApiException {
+        return bpmnApi.listBpmnUserTasks(projectId, workflowId, status, assignee, candidateUser, candidateGroup, businessId, page, pageSize);
     }
 
     public BpmnUserTaskPaginatedResponse listUserTasksForCaller(int page, int pageSize) throws ApiException {

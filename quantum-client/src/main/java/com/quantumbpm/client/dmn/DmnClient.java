@@ -36,6 +36,7 @@ public class DmnClient {
         body.setVersion(opts.version);
         body.setDecisions(opts.decisions);
         body.setDecisionServices(opts.decisionServices);
+        body.setBusinessId(opts.businessId);
         return api.evaluateByDefinitionsID(projectId, definitionsId, body, opts.version);
     }
 
@@ -50,6 +51,7 @@ public class DmnClient {
         body.setVersion(opts.version);
         body.setDecisions(opts.decisions);
         body.setDecisionServices(opts.decisionServices);
+        body.setBusinessId(opts.businessId);
         return api.evaluateStored(projectId, definitionId, body);
     }
 
@@ -89,6 +91,7 @@ public class DmnClient {
         Integer version;
         List<String> decisions;
         List<String> decisionServices;
+        String businessId;
 
         static EvaluateOptions from(EvaluateOption[] options) {
             EvaluateOptions o = new EvaluateOptions();
@@ -122,6 +125,14 @@ public class DmnClient {
     /** Restrict evaluation to the named decision services. */
     public static EvaluateOption withDecisionServices(String... names) {
         return o -> o.decisionServices = List.of(names);
+    }
+
+    /**
+     * Stamp the resulting DMN execution row with a caller-supplied
+     * correlation key for cross-system tracing.
+     */
+    public static EvaluateOption withBusinessId(String businessId) {
+        return o -> o.businessId = businessId;
     }
 
     /** Restrict design evaluation to the named decisions. */
