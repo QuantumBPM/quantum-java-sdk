@@ -7,6 +7,9 @@ import com.quantumbpm.client.generated.api.BpmnApi;
 import com.quantumbpm.client.generated.api.DefaultApi;
 import com.quantumbpm.client.generated.model.CompleteBpmnExternalJobRequest;
 import com.quantumbpm.client.generated.model.ExternalJob;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Scope;
 import com.quantumbpm.client.generated.model.HeartbeatBpmnExternalJobRequest;
 import com.quantumbpm.client.generated.model.PollBpmnJobRequest;
 import com.quantumbpm.client.generated.model.ThrowBpmnExternalJobErrorRequest;
@@ -196,7 +199,8 @@ public class Worker {
     private <T> void dispatch(Registration<T> r, ExternalJob raw) {
         AtomicBoolean stopHeartbeat = new AtomicBoolean(false);
         Thread heartbeatThread = Thread.ofVirtual().start(() -> heartbeat(r, raw, stopHeartbeat));
-        try {
+        Span span = JobTracing.startJobSpan(raw, r.taskType);
+        try (Scope ignored = span.makeCurrent()) {
             Vars vars = Vars.fromWireMap(raw.getVariables());
             T typed;
             try {
@@ -212,17 +216,21 @@ public class Worker {
             try {
                 result = r.handler.handle(job);
             } catch (BpmnError be) {
+                span.setAttribute("bpmn.error_code", be.code());
                 throwError(raw, be.code(), be.variables() != null ? be.variables() : new Vars());
                 return;
             } catch (Throwable t) {
                 LOG.log(Level.SEVERE, "handler " + r.taskType + ": " + t.getMessage(), t);
                 String rawMsg = t.getMessage() == null ? t.toString() : t.getMessage();
+                span.recordException(t);
+                span.setStatus(StatusCode.ERROR, rawMsg);
                 String message = clampWorkerErrorMessage(r.taskType, rawMsg);
                 throwError(raw, "WORKER_ERROR", new Vars().set("error", message));
                 return;
             }
             complete(raw, result == null ? new Vars() : result);
         } finally {
+            span.end();
             stopHeartbeat.set(true);
             heartbeatThread.interrupt();
         }

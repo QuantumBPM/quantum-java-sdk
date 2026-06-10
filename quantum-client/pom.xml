@@ -34,6 +34,16 @@
             <version>0.2.6</version>
         </dependency>
 
+        <!-- OpenTelemetry API only: the worker runtime opens a span per job and
+             continues the originating instance's trace. A no-op unless the
+             application configures an OTel SDK and registers it globally, so
+             workers that don't use tracing pay nothing. -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+            <version>1.44.0</version>
+        </dependency>
+
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
