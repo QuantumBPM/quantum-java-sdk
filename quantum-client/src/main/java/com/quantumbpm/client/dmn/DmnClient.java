@@ -7,6 +7,7 @@ import com.quantumbpm.client.generated.model.BatchEvaluationResponse;
 import com.quantumbpm.client.generated.model.EvaluateDesignRequest;
 import com.quantumbpm.client.generated.model.EvaluateStoredRequest;
 import com.quantumbpm.client.generated.model.EvaluationResult;
+import com.quantumbpm.client.generated.model.FeelValue;
 import com.quantumbpm.client.variables.Vars;
 
 import java.util.List;
@@ -68,10 +69,13 @@ public class DmnClient {
     }
 
     /** Evaluate the same XML against many input rows in one request. */
+    @SuppressWarnings("unchecked")
     public BatchEvaluationResponse evaluateDesignBatch(String xml, List<Vars> rows) throws ApiException {
         BatchEvaluateDesignRequest body = new BatchEvaluateDesignRequest();
         body.setXml(xml);
-        body.setInputs(rows.stream().map(Vars::toMap).toList());
+        body.setInputs(rows.stream()
+                .map(v -> (Map<String, FeelValue>) v.toFeelContext())
+                .toList());
         return api.evaluateDesignBatch(body);
     }
 

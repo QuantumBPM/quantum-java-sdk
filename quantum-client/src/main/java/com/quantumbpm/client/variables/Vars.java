@@ -1,5 +1,6 @@
 package com.quantumbpm.client.variables;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -16,7 +17,11 @@ import java.util.Map;
  */
 public final class Vars {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
+    // USE_BIG_DECIMAL_FOR_FLOATS: FEEL numbers are exact decimals; double
+    // parsing would silently narrow anything beyond ~15 significant digits.
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
 
     private final Map<String, Object> data;
 

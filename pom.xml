@@ -58,6 +58,20 @@
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
             </dependency>
+            <!-- Pin core+annotations to the same version as databind; the
+                 spring-boot BOM below otherwise downgrades them (2.15.x),
+                 and mixed jackson jars fail at runtime (e.g. BigDecimal
+                 parsing calls JsonParser.getNumberTypeFP, added in 2.17). -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson.datatype</groupId>
                 <artifactId>jackson-datatype-jsr310</artifactId>

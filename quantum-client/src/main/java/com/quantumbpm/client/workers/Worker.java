@@ -1,5 +1,6 @@
 package com.quantumbpm.client.workers;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.quantumbpm.client.generated.ApiException;
@@ -46,7 +47,11 @@ public class Worker {
     private static final Duration DEFAULT_LOCK_DURATION = Duration.parse("30s");
     private static final int DEFAULT_MAX_ERROR_MESSAGE_BYTES = 2048;
     private static final long POLL_ERROR_BACKOFF_MS = 2_000L;
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
+    // USE_BIG_DECIMAL_FOR_FLOATS mirrors Vars/QuantumBPM: job variables must
+    // reach handlers with exact decimals, not doubles.
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
 
     private final DefaultApi defaultApi;
     private final BpmnApi bpmnApi;

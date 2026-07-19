@@ -1,5 +1,6 @@
 package com.quantumbpm.client;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.quantumbpm.client.auth.TokenException;
 import com.quantumbpm.client.auth.TokenProvider;
 import com.quantumbpm.client.bpmn.BpmnClient;
@@ -92,6 +93,11 @@ public final class QuantumBPM {
     private static ApiClient buildApiClient(String baseUrl, TokenProvider provider) {
         URI uri = URI.create(baseUrl);
         ApiClient client = new ApiClient();
+        // FEEL numbers are exact decimals; Jackson's default double parsing
+        // would silently narrow anything beyond ~15 significant digits.
+        // getObjectMapper() hands out a copy, so enable-and-set-back.
+        client.setObjectMapper(client.getObjectMapper()
+                .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS));
         if (uri.getScheme() != null) client.setScheme(uri.getScheme());
         if (uri.getHost() != null) client.setHost(uri.getHost());
         if (uri.getPort() != -1) client.setPort(uri.getPort());
