@@ -19,7 +19,7 @@ import com.quantumbpm.client.generated.model.GetBpmnInstanceVariables200Response
 import com.quantumbpm.client.generated.model.PublishBpmnMessageRequest;
 import com.quantumbpm.client.generated.model.PublishBpmnSignalRequest;
 import com.quantumbpm.client.generated.model.StartBpmnInstanceRequest;
-import com.quantumbpm.client.generated.model.ThrowBpmnExternalJobErrorRequest;
+import com.quantumbpm.client.generated.model.ThrowBpmnUserTaskErrorRequest;
 import com.quantumbpm.client.generated.model.UpdateBpmnInstanceVariablesRequest;
 import com.quantumbpm.client.generated.model.UpdateUserTaskAssignmentRequest;
 import com.quantumbpm.client.generated.model.UserTask;
@@ -253,7 +253,7 @@ public class BpmnClient {
     }
 
     public void throwUserTaskError(String executionKey, String errorCode, Vars vars) throws ApiException {
-        ThrowBpmnExternalJobErrorRequest body = new ThrowBpmnExternalJobErrorRequest();
+        ThrowBpmnUserTaskErrorRequest body = new ThrowBpmnUserTaskErrorRequest();
         body.setErrorCode(errorCode);
         if (vars != null) body.setVariables(vars.toWireMap());
         bpmnApi.throwBpmnUserTaskError(projectId, executionKey, body);

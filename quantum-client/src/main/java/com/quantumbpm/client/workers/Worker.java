@@ -265,6 +265,7 @@ public class Worker {
         try {
             CompleteBpmnExternalJobRequest body = new CompleteBpmnExternalJobRequest();
             body.setWorkflowID(raw.getWorkflowID());
+            body.setClientID(clientId);
             body.setVariables(vars.toWireMap());
             defaultApi.completeBpmnExternalJob(projectId, raw.getExecutionKey(), body);
         } catch (ApiException e) {
@@ -276,6 +277,7 @@ public class Worker {
         try {
             ThrowBpmnExternalJobErrorRequest body = new ThrowBpmnExternalJobErrorRequest();
             body.setErrorCode(code);
+            body.setClientID(clientId);
             body.setVariables(vars.toWireMap());
             bpmnApi.throwBpmnExternalJobError(projectId, raw.getExecutionKey(), body);
         } catch (ApiException e) {
