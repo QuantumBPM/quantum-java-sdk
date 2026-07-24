@@ -212,7 +212,7 @@ public class Worker {
                 typed = decode(vars, r.typed);
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "decode vars " + r.taskType + ": " + e.getMessage());
-                throwError(raw, "WORKER_ERROR", new Vars().set("error", "decode vars: " + e.getMessage()));
+                throwError(raw, "WORKER_ERROR", new Vars().set("error", "decode vars: " + e.getMessage()), true);
                 return;
             }
 
@@ -222,7 +222,7 @@ public class Worker {
                 result = r.handler.handle(job);
             } catch (BpmnError be) {
                 span.setAttribute("bpmn.error_code", be.code());
-                throwError(raw, be.code(), be.variables() != null ? be.variables() : new Vars());
+                throwError(raw, be.code(), be.variables() != null ? be.variables() : new Vars(), false);
                 return;
             } catch (Throwable t) {
                 LOG.log(Level.SEVERE, "handler " + r.taskType + ": " + t.getMessage(), t);
@@ -230,7 +230,7 @@ public class Worker {
                 span.recordException(t);
                 span.setStatus(StatusCode.ERROR, rawMsg);
                 String message = clampWorkerErrorMessage(r.taskType, rawMsg);
-                throwError(raw, "WORKER_ERROR", new Vars().set("error", message));
+                throwError(raw, "WORKER_ERROR", new Vars().set("error", message), true);
                 return;
             }
             complete(raw, result == null ? new Vars() : result);
@@ -273,12 +273,15 @@ public class Worker {
         }
     }
 
-    private void throwError(ExternalJob raw, String code, Vars vars) {
+    // retryable=false raises errorCode as a business BPMN error immediately;
+    // retryable=true (technical failure) consumes the retry budget first.
+    private void throwError(ExternalJob raw, String code, Vars vars, boolean retryable) {
         try {
             ThrowBpmnExternalJobErrorRequest body = new ThrowBpmnExternalJobErrorRequest();
             body.setErrorCode(code);
             body.setClientID(clientId);
             body.setVariables(vars.toWireMap());
+            body.setRetryable(retryable);
             bpmnApi.throwBpmnExternalJobError(projectId, raw.getExecutionKey(), body);
         } catch (ApiException e) {
             LOG.log(Level.SEVERE, "throwError " + raw.getExecutionKey() + ": " + e.getMessage());
