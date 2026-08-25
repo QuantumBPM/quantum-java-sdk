@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * quantumbpm:
  *   base-url: https://api.quantumbpm.com
  *   project-id: 00000000-0000-0000-0000-000000000000
- *   token: ${MY_BEARER_TOKEN}        # optional — or supply a TokenProvider bean
+ *   token: ${MY_BEARER_TOKEN}        # optional - or supply a TokenProvider bean
  *   auth:
  *     zitadel:
  *       key-file: /path/to/service-account.json

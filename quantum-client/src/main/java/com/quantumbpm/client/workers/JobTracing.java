@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * OpenTelemetry integration for the worker runtime. Uses the global
  * OpenTelemetry instance, which is a no-op unless the application has
- * configured and registered an OTel SDK — so workers that don't opt into
+ * configured and registered an OTel SDK - so workers that don't opt into
  * tracing pay nothing and a missing trace context degrades to a fresh
  * (unrecorded) span.
  */

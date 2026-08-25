@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * Correlation keys for routing a published BPMN message.
  *
  * <p>Hand-written stub. The OpenAPI spec defines CorrelationKeys as a oneOf
- * union — primitive (string / number / boolean) or an object map. OpenAPI
+ * union - primitive (string / number / boolean) or an object map. OpenAPI
  * Generator's Java oneOf template emits invalid code for unions with
  * parameterized variants, so we skip generation of this file via
  * {@code .openapi-generator-ignore} and provide this thin pass-through.</p>
@@ -47,7 +47,7 @@ public class CorrelationKeys {
     }
 
     /**
-     * No-op stub — CorrelationKeys only appears in request bodies, never in
+     * No-op stub - CorrelationKeys only appears in request bodies, never in
      * URL query strings. The generated parent models call this method on
      * every field; we need the symbol to exist for the surrounding code to
      * compile.

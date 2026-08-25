@@ -35,7 +35,7 @@ public final class Job<T> {
         return raw.getWorkflowID();
     }
 
-    /** Worker selector — the task type the handler was registered for. */
+    /** Worker selector - the task type the handler was registered for. */
     public String taskType() {
         return raw.getTaskType();
     }

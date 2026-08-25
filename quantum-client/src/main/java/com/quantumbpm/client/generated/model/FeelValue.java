@@ -49,7 +49,7 @@ public class FeelValue {
     }
 
     /**
-     * No-op stub — FeelValue only appears in request bodies, never in URL
+     * No-op stub - FeelValue only appears in request bodies, never in URL
      * query strings. The generated parent models call this method on every
      * field; we need the symbol to exist for the surrounding code to
      * compile.

@@ -59,7 +59,7 @@ public final class QuantumBPM {
         return dmn;
     }
 
-    /** BPMN runtime surface — resources, instances, messaging, user tasks. */
+    /** BPMN runtime surface - resources, instances, messaging, user tasks. */
     public BpmnClient bpmn() {
         return bpmn;
     }

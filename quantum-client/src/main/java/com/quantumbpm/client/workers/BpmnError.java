@@ -5,7 +5,7 @@ import com.quantumbpm.client.variables.Vars;
 /**
  * Throw from a handler to fail the job with a BPMN error code. The runtime
  * translates it into a {@code ThrowError} call against the originating
- * service task — matching boundary error events on the task can then route
+ * service task - matching boundary error events on the task can then route
  * the exception in the BPMN model.
  */
 public class BpmnError extends RuntimeException {

@@ -22,7 +22,7 @@ class WorkerClampTest {
     private static final int DEFAULT_LIMIT = 2048;
 
     private Worker newWorker(int maxBytes) {
-        // null API clients are fine — the clamp helper never touches them.
+        // null API clients are fine - the clamp helper never touches them.
         return new Worker(null, null, PROJECT_ID, null, maxBytes);
     }
 
@@ -79,7 +79,7 @@ class WorkerClampTest {
 
     @Test
     void cutsOnUtf8Boundary() {
-        // "é" is 2 bytes in UTF-8 — a naive byte slice could split it.
+        // "é" is 2 bytes in UTF-8 - a naive byte slice could split it.
         Worker w = newWorker(200);
         String msg = "é".repeat(1000); // 2000 bytes
         String out = w.clampWorkerErrorMessage("t", msg);

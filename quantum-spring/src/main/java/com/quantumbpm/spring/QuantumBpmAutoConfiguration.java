@@ -20,7 +20,7 @@ import java.io.IOException;
  * are set. Wires:</p>
  *
  * <ul>
- *   <li>A {@link TokenProvider} — {@link ZitadelTokenProvider} when
+ *   <li>A {@link TokenProvider} - {@link ZitadelTokenProvider} when
  *       {@code quantumbpm.auth.zitadel.key-file} is set, or
  *       {@link StaticTokenProvider} when {@code quantumbpm.token} is set.</li>
  *   <li>A {@link QuantumBPM} bean built from properties.</li>

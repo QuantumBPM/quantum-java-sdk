@@ -33,7 +33,7 @@ public @interface JobWorker {
     /** Maximum jobs in flight for this task type. Default 1. */
     int maxJobs() default 1;
 
-    /** Long-poll wait — duration string ({@code 30s}, {@code 2m}). Default {@code 30s}. */
+    /** Long-poll wait - duration string ({@code 30s}, {@code 2m}). Default {@code 30s}. */
     String pollTimeout() default "30s";
 
     /** Exclusive lock duration on each acquired job. Default {@code 30s}. */

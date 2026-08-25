@@ -80,7 +80,7 @@ public class JobWorkerRegistrar implements SmartLifecycle {
 
     @Override
     public int getPhase() {
-        // Start late, stop early — long-running background work.
+        // Start late, stop early - long-running background work.
         return Integer.MAX_VALUE - 1024;
     }
 

@@ -1,6 +1,6 @@
 # QuantumBPM Java SDK
 
-Official Java SDK for the [QuantumBPM](https://quantumbpm.com) platform — DMN evaluation, BPMN process orchestration, and external job workers.
+Official Java SDK for the [QuantumBPM](https://quantumbpm.com) platform - DMN evaluation, BPMN process orchestration, and external job workers.
 
 ## Installation
 
@@ -14,7 +14,7 @@ The SDK is split into two artifacts:
     <version>1.0.0</version>
 </dependency>
 
-<!-- Spring Boot starter — autoconfigured client + @JobWorker registration -->
+<!-- Spring Boot starter - autoconfigured client + @JobWorker registration -->
 <dependency>
     <groupId>com.quantumbpm</groupId>
     <artifactId>quantum-spring</artifactId>
@@ -28,7 +28,7 @@ Java 21+. The worker runtime uses virtual threads.
 
 | Module                    | Package                          | Purpose                                                                       |
 | ------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| `quantum-client`          | `com.quantumbpm.client`          | Plain Java SDK — `QuantumBPM`, `DmnClient`, `BpmnClient`, `Worker`            |
+| `quantum-client`          | `com.quantumbpm.client`          | Plain Java SDK - `QuantumBPM`, `DmnClient`, `BpmnClient`, `Worker`            |
 |                           | `com.quantumbpm.client.auth`     | `TokenProvider`, `ZitadelTokenProvider`, `StaticTokenProvider`                |
 |                           | `com.quantumbpm.client.variables`| `Vars` wrapper with typed accessors and FEEL-context conversion               |
 |                           | `com.quantumbpm.client.workers`  | `Worker`, `Job<T>`, `Handler<T>`, `BpmnError`                                 |
@@ -78,7 +78,7 @@ quantumbpm:
     client-id: billing-svc
 ```
 
-A handler — register a method with `@JobWorker`:
+A handler - register a method with `@JobWorker`:
 
 ```java
 import com.quantumbpm.client.variables.Vars;
@@ -291,7 +291,7 @@ worker.handle("send-email", EmailJob.class, job -> {
 });
 ```
 
-In Spring, the type is inferred from the method's `Job<T>` parameter — no extra argument needed.
+In Spring, the type is inferred from the method's `Job<T>` parameter - no extra argument needed.
 
 ### Throwing typed BPMN errors
 
@@ -342,7 +342,7 @@ record Loan(double requestedAmt, boolean approved) {}
 Loan loan = v.as(Loan.class);
 ```
 
-`get(name, Class)` and `as(Class)` use Jackson under the hood — records, POJOs, and primitives all work.
+`get(name, Class)` and `as(Class)` use Jackson under the hood - records, POJOs, and primitives all work.
 
 ## Escape hatch
 
@@ -357,4 +357,4 @@ api.migrateBpmnInstance(client.projectId(), workflowId, body);
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.

@@ -31,8 +31,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Wraps the BPMN engine endpoints — resources, instances, messaging, user
- * tasks, processes — for a single project.
+ * Wraps the BPMN engine endpoints - resources, instances, messaging, user
+ * tasks, processes - for a single project.
  */
 public class BpmnClient {
 
@@ -262,10 +262,20 @@ public class BpmnClient {
     // ------------------------------------------------------------ Processes
 
     public BpmnProcessSummaryPaginatedResponse listProcesses(Integer page, Integer pageSize, String search, OffsetDateTime createdAfter) throws ApiException {
-        return bpmnApi.listBpmnProcesses(projectId, page, pageSize, search, createdAfter);
+        return listProcesses(page, pageSize, search, createdAfter, null);
+    }
+
+    /** {@code suspended} filters by paused versions: true keeps processes with at least one, false keeps those with none, null means no filter. */
+    public BpmnProcessSummaryPaginatedResponse listProcesses(Integer page, Integer pageSize, String search, OffsetDateTime createdAfter, Boolean suspended) throws ApiException {
+        return bpmnApi.listBpmnProcesses(projectId, page, pageSize, search, createdAfter, suspended);
     }
 
     public BpmnProcessVersionPaginatedResponse listProcessVersions(String processId, Integer page, Integer pageSize, OffsetDateTime createdAfter) throws ApiException {
-        return bpmnApi.listBpmnProcessVersions(projectId, processId, page, pageSize, createdAfter);
+        return listProcessVersions(processId, page, pageSize, createdAfter, null);
+    }
+
+    /** {@code suspended} filters by definition-scope suspension: true keeps paused versions, false keeps active ones, null means no filter. */
+    public BpmnProcessVersionPaginatedResponse listProcessVersions(String processId, Integer page, Integer pageSize, OffsetDateTime createdAfter, Boolean suspended) throws ApiException {
+        return bpmnApi.listBpmnProcessVersions(projectId, processId, page, pageSize, createdAfter, suspended);
     }
 }

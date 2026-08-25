@@ -7,12 +7,12 @@
     <parent>
         <groupId>com.quantumbpm</groupId>
         <artifactId>quantum-java-sdk</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>1.1.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>quantum-client</artifactId>
     <name>QuantumBPM Java Client</name>
-    <description>Plain Java client for the QuantumBPM platform — DMN, BPMN, workers.</description>
+    <description>Plain Java client for the QuantumBPM platform - DMN, BPMN, workers.</description>
 
     <dependencies>
         <dependency>
@@ -41,7 +41,6 @@
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-api</artifactId>
-            <version>1.44.0</version>
         </dependency>
 
         <dependency>
@@ -64,12 +63,12 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>1.77</version>
+            <version>1.85</version>
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.77</version>
+            <version>1.85</version>
         </dependency>
 
         <dependency>
