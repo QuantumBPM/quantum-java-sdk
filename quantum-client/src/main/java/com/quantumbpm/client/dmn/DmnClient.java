@@ -79,6 +79,22 @@ public class DmnClient {
         return api.evaluateDesignBatch(body);
     }
 
+    /**
+     * Decode one decision's value from an evaluation result into {@code type},
+     * such as a record matching the decision's output type. Throws when the
+     * decision is not in the result or failed to evaluate.
+     */
+    public static <T> T decisionValue(Map<String, EvaluationResult> result, String decision, Class<T> type) {
+        EvaluationResult r = result.get(decision);
+        if (r == null) {
+            throw new IllegalArgumentException("decision '" + decision + "' is not in the result, got " + result.keySet());
+        }
+        if (r.getError() != null) {
+            throw new IllegalStateException("decision '" + decision + "' failed: " + r.getError());
+        }
+        return Vars.decode(r.getValue() == null ? null : r.getValue().getValue(), type);
+    }
+
     // -------------------- options --------------------
 
     @FunctionalInterface

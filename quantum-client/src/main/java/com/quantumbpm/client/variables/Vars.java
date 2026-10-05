@@ -67,12 +67,17 @@ public final class Vars {
         if (!data.containsKey(name)) {
             throw new IllegalArgumentException("variable '" + name + "' not set");
         }
-        return MAPPER.convertValue(data.get(name), type);
+        return decode(data.get(name), type);
     }
 
     /** Decode the entire Vars into a value of {@code type} (typically a POJO). */
     public <T> T as(Class<T> type) {
-        return MAPPER.convertValue(data, type);
+        return decode(data, type);
+    }
+
+    /** Decode a wire value (map, list, number, string) into {@code type}, numbers kept exact. */
+    public static <T> T decode(Object value, Class<T> type) {
+        return MAPPER.convertValue(value, type);
     }
 
     /** Number of variables. */

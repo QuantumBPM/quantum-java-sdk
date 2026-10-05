@@ -44,7 +44,6 @@ public final class QuantumBPM {
     private QuantumBPM(Builder b) {
         if (b.baseUrl == null || b.baseUrl.isBlank()) throw new IllegalArgumentException("quantumbpm: baseUrl is required");
         if (b.projectId == null) throw new IllegalArgumentException("quantumbpm: projectId is required");
-        if (b.tokenProvider == null) throw new IllegalArgumentException("quantumbpm: tokenProvider is required");
 
         this.projectId = b.projectId;
         this.api = buildApiClient(b.baseUrl, b.tokenProvider);
@@ -104,6 +103,9 @@ public final class QuantumBPM {
         if (uri.getPath() != null && !uri.getPath().isEmpty() && !uri.getPath().equals("/")) {
             client.setBasePath(uri.getPath());
         }
+        // Without a token provider requests go out unauthenticated, as the
+        // devserver expects. Hosted deployments need one.
+        if (provider == null) return client;
         client.setRequestInterceptor(req -> {
             String token;
             try {
@@ -136,6 +138,7 @@ public final class QuantumBPM {
             return this;
         }
 
+        /** Signs requests in. Optional only against the devserver, which has no login. */
         public Builder tokenProvider(TokenProvider tokenProvider) {
             this.tokenProvider = tokenProvider;
             return this;

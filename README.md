@@ -11,14 +11,14 @@ The SDK is split into two artifacts:
 <dependency>
     <groupId>com.quantumbpm</groupId>
     <artifactId>quantum-client</artifactId>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
 </dependency>
 
 <!-- Spring Boot starter - autoconfigured client + @JobWorker registration -->
 <dependency>
     <groupId>com.quantumbpm</groupId>
     <artifactId>quantum-spring</artifactId>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -121,6 +121,15 @@ public class LoanService {
 
 The `TokenProvider` interface is a `@FunctionalInterface` returning a bearer token. Two implementations ship out of the box.
 
+Against the local devserver, which has no login, leave the token provider out. The API lives under `/api` there:
+
+```java
+QuantumBPM client = QuantumBPM.builder()
+    .baseUrl("http://localhost:9060/api")
+    .projectId("00000000-0000-0000-0000-0000000000cc")
+    .build();
+```
+
 ### Zitadel service account
 
 ```java
@@ -161,6 +170,16 @@ var result = client.dmn().evaluate(
 ```
 
 Returns `Map<String, EvaluationResult>` keyed by decision name.
+
+Decode one decision's value into a record or POJO that matches its output type. Numbers stay exact as `BigDecimal`. It throws when the decision is missing from the result or failed to evaluate:
+
+```java
+import static com.quantumbpm.client.dmn.DmnClient.decisionValue;
+
+record CoverCheck(BigDecimal limit, boolean withinCover, BigDecimal uncovered, String message) {}
+
+CoverCheck cover = decisionValue(result, "Cover check", CoverCheck.class);
+```
 
 Pin a version, restrict the evaluated decisions, or attach decision services:
 
