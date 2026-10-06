@@ -130,6 +130,14 @@ QuantumBPM client = QuantumBPM.builder()
     .build();
 ```
 
+The Spring Boot starter does the same when neither `quantumbpm.token` nor `quantumbpm.auth.zitadel.key-file` is set:
+
+```yaml
+quantumbpm:
+  base-url: http://localhost:9060/api
+  project-id: 00000000-0000-0000-0000-0000000000cc
+```
+
 ### Zitadel service account
 
 ```java
