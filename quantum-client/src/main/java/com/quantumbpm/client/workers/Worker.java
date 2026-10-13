@@ -2,6 +2,7 @@ package com.quantumbpm.client.workers;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.quantumbpm.client.generated.ApiException;
 import com.quantumbpm.client.generated.api.BpmnApi;
@@ -198,7 +199,15 @@ public class Worker {
         body.setMaxJobs(r.options.maxJobs);
         body.setTimeout(r.options.pollTimeout.serialize());
         body.setLockDuration(r.options.lockDuration.serialize());
-        return defaultApi.pollBpmnExternalJobs(projectId, body);
+        try {
+            return defaultApi.pollBpmnExternalJobs(projectId, body);
+        } catch (ApiException e) {
+            if (e.getCause() instanceof MismatchedInputException m
+                    && m.getMessage() != null && m.getMessage().startsWith("No content to map")) {
+                return List.of();
+            }
+            throw e;
+        }
     }
 
     private <T> void dispatch(Registration<T> r, ExternalJob raw) {
@@ -324,6 +333,9 @@ public class Worker {
     private static <T> T decode(Vars vars, Class<T> type) {
         if (type == null || type == Map.class || type == Object.class) {
             return (T) vars.toMap();
+        }
+        if (type == Vars.class) {
+            return (T) vars;
         }
         return MAPPER.convertValue(vars.toMap(), type);
     }
