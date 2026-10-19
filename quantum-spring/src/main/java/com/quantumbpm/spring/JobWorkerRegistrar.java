@@ -61,7 +61,7 @@ public class JobWorkerRegistrar implements SmartLifecycle {
     public synchronized void stop() {
         if (!running) return;
         try {
-            worker.stop(15_000);
+            worker.stop(20_000);
         } finally {
             running = false;
             worker = null;

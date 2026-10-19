@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -63,6 +64,7 @@ public class Worker {
     private final Map<String, Registration<?>> registrations = new HashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopping = new AtomicBoolean(false);
+    private final AtomicBoolean stopTimedOut = new AtomicBoolean(false);
     private final AtomicReference<ExecutorService> pollExecutor = new AtomicReference<>();
     private final AtomicReference<ExecutorService> dispatchExecutor = new AtomicReference<>();
 
@@ -125,8 +127,9 @@ public class Worker {
     }
 
     /**
-     * Stop polling and wait up to {@code timeoutMillis} for in-flight
-     * handlers to finish.
+     * Stop polling and wait up to {@code timeoutMillis} for in-flight handlers
+     * to finish and report. Past the timeout the remaining handlers are
+     * interrupted and not reported. Their locks run out on the server.
      */
     public void stop(long timeoutMillis) {
         if (!stopping.compareAndSet(false, true)) {
@@ -134,15 +137,21 @@ public class Worker {
         }
         ExecutorService poll = pollExecutor.get();
         ExecutorService dispatch = dispatchExecutor.get();
-        if (poll != null) poll.shutdownNow();
-        if (dispatch != null) dispatch.shutdown();
+        if (poll == null || dispatch == null) return;
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        poll.shutdownNow();
         try {
-            if (dispatch != null) {
-                dispatch.awaitTermination(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
-            }
+            // Poll loops exit before the dispatcher closes, so every received job is dispatched.
+            poll.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS);
+            dispatch.shutdown();
+            if (dispatch.awaitTermination(deadline - System.nanoTime(), TimeUnit.NANOSECONDS)) return;
+            LOG.log(Level.WARNING, "workers: stop timed out after " + timeoutMillis
+                    + "ms, interrupting running handlers, their results will not be reported");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        stopTimedOut.set(true);
+        dispatch.shutdownNow();
     }
 
     private <T> void runTaskType(Registration<T> r) {
@@ -154,34 +163,25 @@ public class Worker {
                 Thread.currentThread().interrupt();
                 return;
             }
+            // Poll only for free slots. Each received job already holds a
+            // permit, so nothing blocks between receiving and dispatching.
+            int slots = 1 + sem.drainPermits();
 
             List<ExternalJob> jobs;
             try {
-                jobs = poll(r);
+                jobs = poll(r, slots);
             } catch (Exception e) {
-                sem.release();
+                sem.release(slots);
                 if (stopping.get()) return;
                 LOG.log(Level.WARNING, "poll " + r.taskType + ": " + e.getMessage());
                 sleep(POLL_ERROR_BACKOFF_MS);
                 continue;
             }
+            if (jobs == null) jobs = List.of();
+            sem.release(Math.max(0, slots - jobs.size()));
 
-            if (jobs == null || jobs.isEmpty()) {
-                sem.release();
-                continue;
-            }
-
-            for (int i = 0; i < jobs.size(); i++) {
-                if (i > 0) {
-                    try {
-                        sem.acquire();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
-                }
-                ExternalJob job = jobs.get(i);
-                dispatchExecutor.get().submit(() -> {
+            for (ExternalJob job : jobs) {
+                dispatchExecutor.get().execute(() -> {
                     try {
                         dispatch(r, job);
                     } finally {
@@ -192,11 +192,11 @@ public class Worker {
         }
     }
 
-    private List<ExternalJob> poll(Registration<?> r) throws ApiException {
+    private List<ExternalJob> poll(Registration<?> r, int maxJobs) throws ApiException {
         PollBpmnJobRequest body = new PollBpmnJobRequest();
         body.setClientID(clientId);
         body.setTaskType(r.taskType);
-        body.setMaxJobs(r.options.maxJobs);
+        body.setMaxJobs(maxJobs);
         body.setTimeout(r.options.pollTimeout.serialize());
         body.setLockDuration(r.options.lockDuration.serialize());
         try {
@@ -211,17 +211,23 @@ public class Worker {
     }
 
     private <T> void dispatch(Registration<T> r, ExternalJob raw) {
-        AtomicBoolean stopHeartbeat = new AtomicBoolean(false);
-        Thread heartbeatThread = Thread.ofVirtual().start(() -> heartbeat(r, raw, stopHeartbeat));
+        // Set once, either by the heartbeat when the lock is lost or by this
+        // thread right before it reports. A job is never both.
+        AtomicBoolean settled = new AtomicBoolean(false);
+        Thread handlerThread = Thread.currentThread();
+        Thread heartbeatThread = Thread.ofVirtual().start(() -> heartbeat(r, raw, settled, handlerThread));
         Span span = JobTracing.startJobSpan(raw, r.taskType);
         try (Scope ignored = span.makeCurrent()) {
-            Vars vars = Vars.fromWireMap(raw.getVariables());
+            Vars vars;
             T typed;
             try {
+                vars = Vars.fromWireMap(raw.getVariables());
                 typed = decode(vars, r.typed);
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "decode vars " + r.taskType + ": " + e.getMessage());
-                throwError(raw, "WORKER_ERROR", new Vars().set("error", "decode vars: " + e.getMessage()), true);
+                if (claimReport(settled)) {
+                    throwError(raw, "WORKER_ERROR", new Vars().set("error", "decode vars: " + e.getMessage()), true);
+                }
                 return;
             }
 
@@ -230,10 +236,12 @@ public class Worker {
             try {
                 result = r.handler.handle(job);
             } catch (BpmnError be) {
+                if (!claimReport(settled)) return;
                 span.setAttribute("bpmn.error_code", be.code());
                 throwError(raw, be.code(), be.variables() != null ? be.variables() : new Vars(), false);
                 return;
             } catch (Throwable t) {
+                if (!claimReport(settled)) return;
                 LOG.log(Level.SEVERE, "handler " + r.taskType + ": " + t.getMessage(), t);
                 String rawMsg = t.getMessage() == null ? t.toString() : t.getMessage();
                 span.recordException(t);
@@ -242,30 +250,51 @@ public class Worker {
                 throwError(raw, "WORKER_ERROR", new Vars().set("error", message), true);
                 return;
             }
-            complete(raw, result == null ? new Vars() : result);
+            if (claimReport(settled)) {
+                complete(raw, result == null ? new Vars() : result);
+            }
         } finally {
             span.end();
-            stopHeartbeat.set(true);
+            settled.set(true);
             heartbeatThread.interrupt();
         }
     }
 
-    private void heartbeat(Registration<?> r, ExternalJob raw, AtomicBoolean stop) {
+    // False when the handler was interrupted for a lost lock or a stop timeout.
+    // Such a job is left to the server and not reported, not even as a failure.
+    private boolean claimReport(AtomicBoolean settled) {
+        return !stopTimedOut.get() && settled.compareAndSet(false, true);
+    }
+
+    private void heartbeat(Registration<?> r, ExternalJob raw, AtomicBoolean settled, Thread handler) {
         long intervalMs = Math.max(1_000L, r.options.lockDuration.toMillis() / 2);
-        while (!stop.get()) {
+        while (true) {
             try {
                 Thread.sleep(intervalMs);
             } catch (InterruptedException e) {
                 return;
             }
-            if (stop.get()) return;
+            if (settled.get() || stopTimedOut.get()) return;
             try {
                 HeartbeatBpmnExternalJobRequest body = new HeartbeatBpmnExternalJobRequest();
                 body.setClientID(clientId);
                 body.setLockDuration(r.options.lockDuration.serialize());
                 defaultApi.heartbeatBpmnExternalJob(projectId, raw.getExecutionKey(), body);
             } catch (ApiException e) {
-                LOG.log(Level.WARNING, "heartbeat " + raw.getExecutionKey() + ": " + e.getMessage());
+                // 409: this worker no longer holds the job. 404: the job is gone.
+                if (e.getCode() == 409 || e.getCode() == 404) {
+                    if (settled.compareAndSet(false, true)) {
+                        LOG.log(Level.WARNING, "heartbeat " + raw.getExecutionKey() + ": lock lost (HTTP "
+                                + e.getCode() + "), interrupting handler, its result will not be reported");
+                        handler.interrupt();
+                    }
+                    return;
+                }
+                if (!settled.get()) {
+                    LOG.log(Level.WARNING, "heartbeat " + raw.getExecutionKey() + ": " + e.getMessage());
+                }
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "heartbeat " + raw.getExecutionKey() + ": " + e.getMessage(), e);
             }
         }
     }
@@ -277,8 +306,8 @@ public class Worker {
             body.setClientID(clientId);
             body.setVariables(vars.toWireMap());
             defaultApi.completeBpmnExternalJob(projectId, raw.getExecutionKey(), body);
-        } catch (ApiException e) {
-            LOG.log(Level.SEVERE, "complete " + raw.getExecutionKey() + ": " + e.getMessage());
+        } catch (ApiException | RuntimeException e) {
+            logReportFailure("complete", raw, e);
         }
     }
 
@@ -292,9 +321,19 @@ public class Worker {
             body.setVariables(vars.toWireMap());
             body.setRetryable(retryable);
             bpmnApi.throwBpmnExternalJobError(projectId, raw.getExecutionKey(), body);
-        } catch (ApiException e) {
-            LOG.log(Level.SEVERE, "throwError " + raw.getExecutionKey() + ": " + e.getMessage());
+        } catch (ApiException | RuntimeException e) {
+            logReportFailure("throwError", raw, e);
         }
+    }
+
+    // A 409 means this worker no longer holds the lock and the server dropped the result.
+    private static void logReportFailure(String op, ExternalJob raw, Exception e) {
+        if (e instanceof ApiException ae && ae.getCode() == 409) {
+            LOG.log(Level.WARNING, op + " " + raw.getExecutionKey() + ": lock lost, result discarded");
+            return;
+        }
+        Throwable trace = e instanceof RuntimeException ? e : null;
+        LOG.log(Level.SEVERE, op + " " + raw.getExecutionKey() + ": " + e.getMessage(), trace);
     }
 
     /**

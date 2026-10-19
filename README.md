@@ -301,9 +301,11 @@ worker.handle("send-email", job -> {
     return new Vars().set("messageID", "msg-123");          // → Complete
 }, Worker.withMaxJobs(10), Worker.withLockDuration("1m"));
 
-worker.start();    // returns immediately; loops on virtual threads
-Runtime.getRuntime().addShutdownHook(new Thread(() -> worker.stop(15_000)));
+worker.start();    // returns immediately. Loops run on virtual threads
+Runtime.getRuntime().addShutdownHook(new Thread(() -> worker.stop(20_000)));
 ```
+
+See [Locks, heartbeats, and shutdown](#locks-heartbeats-and-shutdown) for what `stop` does.
 
 ### Typed handlers
 
@@ -346,7 +348,23 @@ worker.handle("send-email", handler,
     Worker.withLockDuration("2m")); // exclusive lock per job
 ```
 
-Concurrency is per task type. Different task types poll independently. The runtime auto-renews the lock at half the lock-duration interval while the handler runs.
+Concurrency is per task type. Different task types poll independently. Each poll asks only for as many jobs as there are free slots, so no job waits on the client without a heartbeat.
+
+### Locks, heartbeats, and shutdown
+
+A polled job is locked to this worker for `lockDuration` past its latest heartbeat. The runtime heartbeats at half that interval while the handler runs. The server caps one attempt at 30 minutes by default (`BPMN_JOB_MAX_HOLD`). When a lock runs out, the server charges the job a retry and offers it again, or raises an incident when no retries are left. So an abandoned job always costs a retry.
+
+When a heartbeat finds the lock gone (another worker holds the job, or it finished or was canceled), the runtime stops heartbeating, interrupts the handler and does not report its result. A complete or error sent after the lock is gone is discarded by the server and logged as a warning.
+
+`worker.stop(timeoutMillis)` stops polling at once. Running handlers keep running and heartbeating, and their results are reported. Handlers still running at the timeout are interrupted and not reported, and `stop` returns. Their locks then run out on the server. Handlers that block (I/O, sleeps, waits) should respond to interrupts.
+
+Wire `stop` to SIGTERM with a shutdown hook:
+
+```java
+Runtime.getRuntime().addShutdownHook(new Thread(() -> worker.stop(20_000)));
+```
+
+The Spring starter calls `stop(20_000)` when the application context closes. On Kubernetes, set `terminationGracePeriodSeconds` above the stop timeout (for example `30` for a 20 s timeout). Otherwise the pod is killed while handlers are still finishing.
 
 ## Variables
 
