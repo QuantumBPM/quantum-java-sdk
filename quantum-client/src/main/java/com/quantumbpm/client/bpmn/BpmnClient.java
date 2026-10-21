@@ -153,7 +153,7 @@ public class BpmnClient {
             Integer pageSize
     ) throws ApiException {
         return defaultApi.listBpmnInstances(
-                projectId, definitionId, status, hasIncident, suspended, createdAfter, businessId, page, pageSize);
+                projectId, definitionId, status, hasIncident, suspended, createdAfter, businessId, null, page, pageSize);
     }
 
     public BpmnInstanceChildrenResponse getInstanceChildren(String workflowId) throws ApiException {

@@ -74,6 +74,7 @@ class BusinessIdThreadingTest {
                     Boolean suspended,
                     OffsetDateTime createdAfter,
                     String businessId,
+                    String processId,
                     Integer page,
                     Integer pageSize) throws ApiException {
                 capturedBusinessId.set(businessId);

@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -115,7 +117,7 @@ class WorkerPollTest {
             assertEquals(0, reports.get(), "a job with a lost lock must not be reported");
             List<String> warnings = log.warnings();
             assertEquals(1, warnings.size(), "expected one lock-lost warning, got " + warnings);
-            assertTrue(warnings.get(0).contains("lock lost"), warnings.get(0));
+            assertTrue(warnings.get(0).contains("interrupting handler"), warnings.get(0));
         } finally {
             worker.stop(1_000);
             server.stop(0);
@@ -285,12 +287,82 @@ class WorkerPollTest {
             while (log.warnings().isEmpty() && System.currentTimeMillis() < deadline) {
                 Thread.sleep(20);
             }
-            assertEquals(List.of("complete k1: lock lost, result discarded"), log.warnings());
+            assertEquals(List.of("complete k1: result discarded: job not held"), log.warnings());
             assertTrue(log.severe().isEmpty(), "expected no SEVERE, got " + log.severe());
         } finally {
             worker.stop(1_000);
             server.stop(0);
             detach(log);
+        }
+    }
+
+    @Test
+    void heartbeatsAtHalfTheLockTheServerGranted() throws Exception {
+        AtomicInteger polls = new AtomicInteger();
+        AtomicLong polledAt = new AtomicLong();
+        CompletableFuture<Long> heartbeatAt = new CompletableFuture<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(JOBS + "poll", ex -> {
+            if (polls.incrementAndGet() == 1) {
+                polledAt.set(System.currentTimeMillis());
+                // The worker asks for 1m, the server grants 2s.
+                respond(ex, 200, ONE_JOB.replace("\"variables\"",
+                        "\"lockExpiresAt\":\"" + Instant.now().plusSeconds(2) + "\",\"variables\""));
+                return;
+            }
+            sleep(50);
+            respond(ex, 204, null);
+        });
+        server.createContext(JOBS + "k1/heartbeat", ex -> {
+            heartbeatAt.complete(System.currentTimeMillis());
+            respond(ex, 200, null);
+        });
+        server.createContext(JOBS + "k1/complete", ex -> respond(ex, 204, null));
+        server.start();
+
+        Worker worker = newWorker(server);
+        worker.handle("issue-payout", job -> {
+            heartbeatAt.get(5, TimeUnit.SECONDS);
+            return null;
+        }, Worker.withLockDuration("1m"));
+        worker.start();
+        try {
+            long afterMs = heartbeatAt.get(5, TimeUnit.SECONDS) - polledAt.get();
+            assertTrue(afterMs < 2_000, "first heartbeat " + afterMs + "ms after the poll, lock was 2s");
+        } finally {
+            worker.stop(1_000);
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void awaitTerminationReturnsOnceStopHasReturned() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(JOBS + "poll", ex -> {
+            sleep(50);
+            respond(ex, 204, null);
+        });
+        server.start();
+
+        Worker worker = newWorker(server);
+        worker.handle("issue-payout", job -> null);
+        worker.start();
+        CountDownLatch returned = new CountDownLatch(1);
+        Thread waiter = Thread.ofVirtual().start(() -> {
+            try {
+                worker.awaitTermination();
+                returned.countDown();
+            } catch (InterruptedException ignored) {
+            }
+        });
+        try {
+            assertFalse(returned.await(300, TimeUnit.MILLISECONDS), "awaitTermination returned before stop");
+            worker.stop(1_000);
+            assertTrue(returned.await(2, TimeUnit.SECONDS), "awaitTermination did not return after stop");
+        } finally {
+            waiter.interrupt();
+            worker.stop(1_000);
+            server.stop(0);
         }
     }
 

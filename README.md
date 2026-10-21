@@ -303,9 +303,10 @@ worker.handle("send-email", job -> {
 
 worker.start();    // returns immediately. Loops run on virtual threads
 Runtime.getRuntime().addShutdownHook(new Thread(() -> worker.stop(20_000)));
+worker.awaitTermination();    // blocks until stop returns
 ```
 
-See [Locks, heartbeats, and shutdown](#locks-heartbeats-and-shutdown) for what `stop` does.
+Virtual threads do not keep the JVM alive, so `awaitTermination()` blocks `main` until `stop` has returned. See [Locks, heartbeats, and shutdown](#locks-heartbeats-and-shutdown) for what `stop` does.
 
 ### Typed handlers
 
@@ -350,9 +351,11 @@ worker.handle("send-email", handler,
 
 Concurrency is per task type. Different task types poll independently. Each poll asks only for as many jobs as there are free slots, so no job waits on the client without a heartbeat.
 
+Durations are Go duration strings such as `500ms`, `30s`, `12.5s`, `1m30s` or `1.5h`. An invalid one throws `IllegalArgumentException` from `handle`.
+
 ### Locks, heartbeats, and shutdown
 
-A polled job is locked to this worker for `lockDuration` past its latest heartbeat. The runtime heartbeats at half that interval while the handler runs. The server caps one attempt at 30 minutes by default (`BPMN_JOB_MAX_HOLD`). When a lock runs out, the server charges the job a retry and offers it again, or raises an incident when no retries are left. So an abandoned job always costs a retry.
+A polled job is locked to this worker for `lockDuration` past its latest heartbeat. The server clamps the lock to between 10 seconds and 5 minutes by default (`BPMN_WORKER_LEASE_MIN`, `BPMN_WORKER_LEASE_MAX`) and returns the expiry it granted with each job. While the handler runs, the worker heartbeats at half of the lock the server granted. The server caps one attempt at 30 minutes by default (`BPMN_JOB_MAX_HOLD`). When a lock runs out, the server charges the job a retry and offers it again, or raises an incident when no retries are left. So an abandoned job always costs a retry.
 
 When a heartbeat finds the lock gone (another worker holds the job, or it finished or was canceled), the runtime stops heartbeating, interrupts the handler and does not report its result. A complete or error sent after the lock is gone is discarded by the server and logged as a warning.
 

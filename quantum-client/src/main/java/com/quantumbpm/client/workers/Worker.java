@@ -18,12 +18,16 @@ import com.quantumbpm.client.generated.model.ThrowBpmnExternalJobErrorRequest;
 import com.quantumbpm.client.variables.Vars;
 
 import java.lang.management.ManagementFactory;
+import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -65,6 +69,7 @@ public class Worker {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopping = new AtomicBoolean(false);
     private final AtomicBoolean stopTimedOut = new AtomicBoolean(false);
+    private final CountDownLatch terminated = new CountDownLatch(1);
     private final AtomicReference<ExecutorService> pollExecutor = new AtomicReference<>();
     private final AtomicReference<ExecutorService> dispatchExecutor = new AtomicReference<>();
 
@@ -83,7 +88,7 @@ public class Worker {
         this.defaultApi = defaultApi;
         this.bpmnApi = bpmnApi;
         this.projectId = projectId;
-        this.clientId = (clientId == null || clientId.isBlank()) ? defaultClientId() : clientId;
+        this.clientId = (clientId == null || clientId.isBlank()) ? defaultClientId() : clientId.strip();
         this.maxErrorMessageBytes = maxErrorMessageBytes > 0 ? maxErrorMessageBytes : DEFAULT_MAX_ERROR_MESSAGE_BYTES;
     }
 
@@ -135,6 +140,23 @@ public class Worker {
         if (!stopping.compareAndSet(false, true)) {
             return;
         }
+        try {
+            shutdownExecutors(timeoutMillis);
+        } finally {
+            terminated.countDown();
+        }
+    }
+
+    /**
+     * Block until {@link #stop} has returned. The worker runs on virtual
+     * threads, which do not keep the JVM alive, so a plain {@code main} calls
+     * this after {@link #start}.
+     */
+    public void awaitTermination() throws InterruptedException {
+        terminated.await();
+    }
+
+    private void shutdownExecutors(long timeoutMillis) {
         ExecutorService poll = pollExecutor.get();
         ExecutorService dispatch = dispatchExecutor.get();
         if (poll == null || dispatch == null) return;
@@ -215,7 +237,8 @@ public class Worker {
         // thread right before it reports. A job is never both.
         AtomicBoolean settled = new AtomicBoolean(false);
         Thread handlerThread = Thread.currentThread();
-        Thread heartbeatThread = Thread.ofVirtual().start(() -> heartbeat(r, raw, settled, handlerThread));
+        long intervalMs = heartbeatIntervalMillis(r.options.lockDuration.toMillis(), raw.getLockExpiresAt(), Instant.now());
+        Thread heartbeatThread = Thread.ofVirtual().start(() -> heartbeat(r, raw, intervalMs, settled, handlerThread));
         Span span = JobTracing.startJobSpan(raw, r.taskType);
         try (Scope ignored = span.makeCurrent()) {
             Vars vars;
@@ -266,8 +289,18 @@ public class Worker {
         return !stopTimedOut.get() && settled.compareAndSet(false, true);
     }
 
-    private void heartbeat(Registration<?> r, ExternalJob raw, AtomicBoolean settled, Thread handler) {
-        long intervalMs = Math.max(1_000L, r.options.lockDuration.toMillis() / 2);
+    // Half of the lock the server granted, never more than half of the requested one.
+    // A missing or non-positive grant (client clock skew) falls back to the requested lock.
+    static long heartbeatIntervalMillis(long requestedMs, OffsetDateTime lockExpiresAt, Instant now) {
+        long baseMs = requestedMs;
+        if (lockExpiresAt != null) {
+            long grantedMs = lockExpiresAt.toInstant().toEpochMilli() - now.toEpochMilli();
+            if (grantedMs > 0) baseMs = Math.min(requestedMs, grantedMs);
+        }
+        return Math.max(1_000L, baseMs / 2);
+    }
+
+    private void heartbeat(Registration<?> r, ExternalJob raw, long intervalMs, AtomicBoolean settled, Thread handler) {
         while (true) {
             try {
                 Thread.sleep(intervalMs);
@@ -284,8 +317,8 @@ public class Worker {
                 // 409: this worker no longer holds the job. 404: the job is gone.
                 if (e.getCode() == 409 || e.getCode() == 404) {
                     if (settled.compareAndSet(false, true)) {
-                        LOG.log(Level.WARNING, "heartbeat " + raw.getExecutionKey() + ": lock lost (HTTP "
-                                + e.getCode() + "), interrupting handler, its result will not be reported");
+                        LOG.log(Level.WARNING, "heartbeat " + raw.getExecutionKey() + ": " + conflictReason(e)
+                                + ", interrupting handler, its result will not be reported");
                         handler.interrupt();
                     }
                     return;
@@ -326,14 +359,26 @@ public class Worker {
         }
     }
 
-    // A 409 means this worker no longer holds the lock and the server dropped the result.
+    // A 409 means this worker no longer holds the job and the server dropped the result.
     private static void logReportFailure(String op, ExternalJob raw, Exception e) {
         if (e instanceof ApiException ae && ae.getCode() == 409) {
-            LOG.log(Level.WARNING, op + " " + raw.getExecutionKey() + ": lock lost, result discarded");
+            LOG.log(Level.WARNING, op + " " + raw.getExecutionKey() + ": result discarded: " + conflictReason(ae));
             return;
         }
         Throwable trace = e instanceof RuntimeException ? e : null;
         LOG.log(Level.SEVERE, op + " " + raw.getExecutionKey() + ": " + e.getMessage(), trace);
+    }
+
+    // The message of the server's error body, which says why this worker no
+    // longer holds the job, for example that its instance was cancelled.
+    static String conflictReason(ApiException e) {
+        try {
+            String message = MAPPER.readTree(e.getResponseBody()).path("message").asText("");
+            if (!message.isEmpty()) return message;
+        } catch (Exception notJson) {
+            // fall through to the generic reason
+        }
+        return "this worker no longer holds the job";
     }
 
     /**
@@ -434,36 +479,47 @@ public class Worker {
     private record Registration<T>(String taskType, Class<T> typed, Handler<T> handler, HandleOptions options) {}
 
     /**
-     * Compact duration parser that accepts Go-style strings ({@code 30s},
-     * {@code 2m}, {@code 1h}, {@code 500ms}). Round-trips back to the same
-     * shape via {@link #serialize()} so the server sees what it expects.
+     * Go duration string with the grammar of Go's {@code time.ParseDuration}:
+     * {@code 30s}, {@code 500ms}, {@code 12.5s}, {@code 1m30s}, {@code 1.5h}.
+     * {@link #serialize()} returns the trimmed input, which the server parses.
      */
-    private static final class Duration {
-        private static final Pattern PATTERN = Pattern.compile("^(\\d+)(ms|s|m|h)$");
+    static final class Duration {
+        private static final String PART = "(\\d+(?:\\.\\d*)?|\\.\\d+)(ns|us|µs|μs|ms|s|m|h)";
+        private static final Pattern FORMAT = Pattern.compile("[-+]?(?:0|(?:" + PART + ")+)");
+        private static final Pattern PARTS = Pattern.compile(PART);
+        private static final Map<String, Long> UNIT_NANOS = Map.of(
+                "ns", 1L, "us", 1_000L, "µs", 1_000L, "μs", 1_000L, "ms", 1_000_000L,
+                "s", 1_000_000_000L, "m", 60_000_000_000L, "h", 3_600_000_000_000L);
+        private static final BigDecimal MAX_NANOS = BigDecimal.valueOf(Long.MAX_VALUE);
 
-        private final long ms;
+        private final long nanos;
         private final String repr;
 
-        private Duration(long ms, String repr) {
-            this.ms = ms;
+        private Duration(long nanos, String repr) {
+            this.nanos = nanos;
             this.repr = repr;
         }
 
         static Duration parse(String s) {
-            Matcher m = PATTERN.matcher(s.trim());
-            if (!m.matches()) throw new IllegalArgumentException("invalid duration: " + s);
-            long value = Long.parseLong(m.group(1));
-            return switch (m.group(2)) {
-                case "ms" -> new Duration(value, s);
-                case "s"  -> new Duration(value * 1_000L, s);
-                case "m"  -> new Duration(value * 60_000L, s);
-                case "h"  -> new Duration(value * 3_600_000L, s);
-                default -> throw new IllegalArgumentException("invalid duration: " + s);
-            };
+            String t = s == null ? "" : s.trim();
+            if (!FORMAT.matcher(t).matches()) throw invalid(s);
+            BigDecimal total = BigDecimal.ZERO;
+            Matcher m = PARTS.matcher(t);
+            while (m.find()) {
+                total = total.add(new BigDecimal(m.group(1)).multiply(BigDecimal.valueOf(UNIT_NANOS.get(m.group(2)))));
+            }
+            if (total.compareTo(MAX_NANOS) > 0) throw invalid(s);
+            long nanos = total.longValue();
+            return new Duration(t.startsWith("-") ? -nanos : nanos, t);
+        }
+
+        private static IllegalArgumentException invalid(String s) {
+            return new IllegalArgumentException(
+                    "invalid duration \"" + s + "\", use a Go duration such as 30s, 1m30s or 12.5s");
         }
 
         long toMillis() {
-            return ms;
+            return nanos / 1_000_000L;
         }
 
         String serialize() {
