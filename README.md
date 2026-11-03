@@ -11,14 +11,14 @@ The SDK is split into two artifacts:
 <dependency>
     <groupId>com.quantumbpm</groupId>
     <artifactId>quantum-client</artifactId>
-    <version>1.2.0</version>
+    <version>2.0.0</version>
 </dependency>
 
 <!-- Spring Boot starter - autoconfigured client + @JobWorker registration -->
 <dependency>
     <groupId>com.quantumbpm</groupId>
     <artifactId>quantum-spring</artifactId>
-    <version>1.2.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -29,7 +29,7 @@ Java 21+. The worker runtime uses virtual threads.
 | Module                    | Package                          | Purpose                                                                       |
 | ------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
 | `quantum-client`          | `com.quantumbpm.client`          | Plain Java SDK - `QuantumBPM`, `DmnClient`, `BpmnClient`, `Worker`            |
-|                           | `com.quantumbpm.client.auth`     | `TokenProvider`, `ZitadelTokenProvider`, `StaticTokenProvider`                |
+|                           | `com.quantumbpm.client.auth`     | `TokenProvider`, `ClientCredentialsTokenProvider`, `StaticTokenProvider`      |
 |                           | `com.quantumbpm.client.variables`| `Vars` wrapper with typed accessors and FEEL-context conversion               |
 |                           | `com.quantumbpm.client.workers`  | `Worker`, `Job<T>`, `Handler<T>`, `BpmnError`                                 |
 |                           | `com.quantumbpm.client.generated`| OpenAPI-generated client (use `client.raw()` for unwrapped endpoints)         |
@@ -39,17 +39,17 @@ Java 21+. The worker runtime uses virtual threads.
 
 ```java
 import com.quantumbpm.client.QuantumBPM;
-import com.quantumbpm.client.auth.ZitadelTokenProvider;
+import com.quantumbpm.client.auth.ClientCredentialsTokenProvider;
 import com.quantumbpm.client.variables.Vars;
 import java.util.UUID;
 
-ZitadelTokenProvider provider = new ZitadelTokenProvider(
-    "./service-account.json",       // Zitadel JSON Key file
-    "https://auth.quantumbpm.com",  // issuer
-    "your-zitadel-project-id");     // audience scope
+var provider = new ClientCredentialsTokenProvider(
+    "https://idp.example.com/realms/acme/protocol/openid-connect/token",
+    "billing-svc",
+    System.getenv("QUANTUMBPM_CLIENT_SECRET"));
 
 QuantumBPM client = QuantumBPM.builder()
-    .baseUrl("https://api.quantumbpm.com")
+    .baseUrl("https://quantumbpm.example.com")
     .projectId(UUID.fromString("00000000-0000-0000-0000-000000000000"))
     .tokenProvider(provider)
     .build();
@@ -66,13 +66,13 @@ System.out.println(result);
 
 ```yaml
 quantumbpm:
-  base-url: https://api.quantumbpm.com
+  base-url: https://quantumbpm.example.com
   project-id: 00000000-0000-0000-0000-000000000000
   auth:
-    zitadel:
-      key-file: /path/to/service-account.json
-      issuer: https://auth.quantumbpm.com
-      project-id: 123456789
+    client-credentials:
+      token-url: https://idp.example.com/realms/acme/protocol/openid-connect/token
+      client-id: billing-svc
+      client-secret: ${QUANTUMBPM_CLIENT_SECRET}
   worker:
     enabled: true            # default; scans @JobWorker beans
     client-id: billing-svc
@@ -110,7 +110,7 @@ public class LoanService {
     public LoanService(QuantumBPM quantum) { this.quantum = quantum; }
 
     public String startLoan(LoanRequest req) throws Exception {
-        return quantum.bpmn().startInstance(processDefId, Vars.of()
+        return quantum.bpmn().startInstance("loan-process", Vars.of()
             .set("applicantID", req.applicantId())
             .set("requestedAmt", req.amount()));
     }
@@ -130,7 +130,7 @@ QuantumBPM client = QuantumBPM.builder()
     .build();
 ```
 
-The Spring Boot starter does the same when neither `quantumbpm.token` nor `quantumbpm.auth.zitadel.key-file` is set:
+The Spring Boot starter does the same when neither `quantumbpm.token` nor the client credentials properties (`quantumbpm.auth.client-credentials.token-url` and `.client-id`) are set:
 
 ```yaml
 quantumbpm:
@@ -138,20 +138,51 @@ quantumbpm:
   project-id: 00000000-0000-0000-0000-0000000000cc
 ```
 
-### Zitadel service account
+### OAuth 2.0 client credentials
+
+`ClientCredentialsTokenProvider` fetches access tokens from your OIDC identity provider (Keycloak, Microsoft Entra ID, Okta, Auth0 and others) with the client credentials grant. Register a confidential client for your service at the identity provider and pass its token endpoint and credentials:
 
 ```java
-import com.quantumbpm.client.auth.ZitadelTokenProvider;
+import com.quantumbpm.client.auth.ClientCredentialsTokenProvider;
 
-var provider = new ZitadelTokenProvider(
-    "./service-account.json",      // path to JSON Key file
-    "https://auth.quantumbpm.com", // issuer URL
-    "your-zitadel-project-id");    // adds the audience scope
+var provider = new ClientCredentialsTokenProvider(
+    "https://idp.example.com/realms/acme/protocol/openid-connect/token",
+    "billing-svc",
+    System.getenv("QUANTUMBPM_CLIENT_SECRET"));
+
+// With scopes and an audience. Some providers such as Auth0 require the audience.
+var withAudience = new ClientCredentialsTokenProvider(
+    "https://idp.example.com/realms/acme/protocol/openid-connect/token",
+    "billing-svc",
+    System.getenv("QUANTUMBPM_CLIENT_SECRET"),
+    List.of("openid"),
+    "quantumbpm");
 ```
 
-Tokens are cached in-memory until shortly before expiry. Concurrent calls share the cache via a lock.
+The exact token endpoint depends on the identity provider. The provider's OIDC discovery document (`/.well-known/openid-configuration`) lists it as `token_endpoint`.
+
+Scopes are sent space-joined as the `scope` parameter and the audience as the `audience` parameter. Each is left out of the request when empty. The client must be set up at the identity provider so its tokens carry the audience and roles your QuantumBPM deployment expects.
+
+The token is cached in memory and replaced once less than 60 seconds of its lifetime remain. Concurrent calls share the cache via a lock. A non-2xx response from the token endpoint throws `TokenException` with the HTTP status and response body.
+
+With the Spring Boot starter, set the same values as properties:
+
+```yaml
+quantumbpm:
+  auth:
+    client-credentials:
+      token-url: https://idp.example.com/realms/acme/protocol/openid-connect/token
+      client-id: billing-svc
+      client-secret: ${QUANTUMBPM_CLIENT_SECRET}
+      scopes: openid           # optional, comma-separated or a YAML list
+      audience: quantumbpm     # optional
+```
+
+The starter uses the client credentials provider when `token-url` and `client-id` are set, and `quantumbpm.token` otherwise.
 
 ### Static bearer token
+
+For a token acquired out of band, for example by another library or in tests:
 
 ```java
 import com.quantumbpm.client.auth.StaticTokenProvider;
@@ -200,12 +231,6 @@ var result = client.dmn().evaluate(
     withDecisions("eligibility", "rate"));
 ```
 
-### Evaluate by platform UUID
-
-```java
-var result = client.dmn().evaluateById(definitionUuid, vars);
-```
-
 ### Ad-hoc XML evaluation
 
 ```java
@@ -237,23 +262,31 @@ var batch = client.dmn().evaluateDesignBatch(dmnXml, rows);
 var draft = client.bpmn().createResource("loan-process", bpmnXml);
 client.bpmn().deployResource(draft.getId());
 
-// Re-fetch to get populated process-definition list.
+// Re-fetch to get the process versions the deploy created.
 var deployed = client.bpmn().getResource(draft.getId());
 var processDef = deployed.getProcesses().get(0);
 
-String workflowId = client.bpmn().startInstance(
-    processDef.getId(),
+// Starts the latest version. startInstance(processId, version, vars, businessId) picks one.
+String instanceId = client.bpmn().startInstance(
+    processDef.getProcessID(),
     new Vars().set("applicantID", "u-123").set("requestedAmt", 25000));
 ```
 
 ### Inspect runtime state
 
 ```java
-var state = client.bpmn().getInstance(workflowId);
+var state = client.bpmn().getInstance(instanceId);
 System.out.println(state.getStatus());
 
-Vars vars = client.bpmn().getInstanceVariables(workflowId);
-var children = client.bpmn().getInstanceChildren(workflowId);
+Vars vars = client.bpmn().getInstanceVariables(instanceId);
+var children = client.bpmn().getInstanceChildren(instanceId);
+
+// History pages run oldest first. With fromSeq and beforeSeq null a page holds
+// the newest entries, and an entry read by its seq carries its inputs and outputs.
+var page = client.bpmn().getInstanceHistory(instanceId, 1L, null, 100);
+var entry = client.bpmn().getInstanceHistoryEntry(instanceId, page.getItems().get(0).getSeq());
+
+var version = client.bpmn().getProcessVersion("loan-process", 2, null);
 ```
 
 ### Send messages and signals
@@ -272,6 +305,19 @@ client.bpmn().publishSignal("system-maintenance", null);
 ```java
 var page = client.bpmn().listUserTasks(
     null, "CREATED", "alice@example.com", null, null, null, null);
+
+// Lists of instances and user tasks page by cursor: pass the page's
+// next cursor back for the next one. It is null on the last page.
+var next = page.getPagination().getNextCursor();
+if (next != null) {
+    page = client.bpmn().listUserTasks(
+        null, "CREATED", "alice@example.com", null, null, next, null);
+}
+
+// The caller's tasks soonest due first, and the project's overdue ones.
+var mine = client.bpmn().listUserTasksForCaller(null, null, "dueDate", null, null);
+var overdue = client.bpmn().listUserTasks(
+    null, "CREATED", null, null, null, null, null, OffsetDateTime.now(), null, null, null);
 
 client.bpmn().completeUserTask(executionKey, new Vars().set("approved", true));
 
@@ -355,7 +401,7 @@ Durations are Go duration strings such as `500ms`, `30s`, `12.5s`, `1m30s` or `1
 
 ### Locks, heartbeats, and shutdown
 
-A polled job is locked to this worker for `lockDuration` past its latest heartbeat. The server clamps the lock to between 10 seconds and 5 minutes by default (`BPMN_WORKER_LEASE_MIN`, `BPMN_WORKER_LEASE_MAX`) and returns the expiry it granted with each job. While the handler runs, the worker heartbeats at half of the lock the server granted. The server caps one attempt at 30 minutes by default (`BPMN_JOB_MAX_HOLD`). When a lock runs out, the server charges the job a retry and offers it again, or raises an incident when no retries are left. So an abandoned job always costs a retry.
+A polled job is locked to this worker for `lockDuration` past its latest heartbeat. The server clamps the lock to between 10 seconds and 5 minutes by default (`ENGINE_WORKER_LOCK_MIN`, `ENGINE_WORKER_LOCK_MAX`) and returns the expiry it granted with each job. While the handler runs, the worker heartbeats at half of the lock the server granted. The server caps one attempt at 30 minutes by default (`ENGINE_JOB_MAX_HOLD`). When a lock runs out, the server charges the job a retry and offers it again, or raises an incident when no retries are left. So an abandoned job always costs a retry.
 
 When a heartbeat finds the lock gone (another worker holds the job, or it finished or was canceled), the runtime stops heartbeating, interrupts the handler and does not report its result. A complete or error sent after the lock is gone is discarded by the server and logged as a warning.
 
@@ -400,7 +446,7 @@ Loan loan = v.as(Loan.class);
 import com.quantumbpm.client.generated.api.BpmnApi;
 
 var api = new BpmnApi(client.raw());
-api.migrateBpmnInstance(client.projectId(), workflowId, body);
+api.migrateBpmnInstance(client.projectId(), instanceId, body);
 ```
 
 ## License

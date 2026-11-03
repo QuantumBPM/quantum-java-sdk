@@ -30,9 +30,9 @@ public final class Job<T> {
         return raw.getExecutionKey();
     }
 
-    /** Workflow ID of the originating instance. */
-    public String workflowId() {
-        return raw.getWorkflowID();
+    /** ID of the originating instance. */
+    public String instanceId() {
+        return raw.getInstanceID();
     }
 
     /** Worker selector - the task type the handler was registered for. */

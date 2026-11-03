@@ -18,13 +18,13 @@ import java.util.UUID;
  *
  * <pre>{@code
  * QuantumBPM client = QuantumBPM.builder()
- *     .baseUrl("https://api.quantumbpm.com")
+ *     .baseUrl("https://quantumbpm.example.com")
  *     .projectId(UUID.fromString("00000000-0000-0000-0000-000000000000"))
- *     .tokenProvider(new ZitadelTokenProvider(keyFile, issuer, projectId))
+ *     .tokenProvider(new ClientCredentialsTokenProvider(tokenUrl, clientId, clientSecret))
  *     .build();
  *
  * Map<String, EvaluationResult> result = client.dmn().evaluate("loan-eligibility", vars);
- * String workflowId = client.bpmn().startInstance(processDefId, vars);
+ * String instanceId = client.bpmn().startInstance("loan-process", vars);
  *
  * Worker worker = client.newWorker("billing-svc");
  * worker.handle("send-email", job -> {

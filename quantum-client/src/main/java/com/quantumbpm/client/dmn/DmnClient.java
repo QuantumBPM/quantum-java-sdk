@@ -41,21 +41,6 @@ public class DmnClient {
         return api.evaluateByDefinitionsID(projectId, definitionsId, body, opts.version);
     }
 
-    /**
-     * Run a stored DMN definition addressed by its platform UUID. Prefer
-     * {@link #evaluate} (by definitions id) for normal use.
-     */
-    public Map<String, EvaluationResult> evaluateById(UUID definitionId, Vars vars, EvaluateOption... options) throws ApiException {
-        EvaluateOptions opts = EvaluateOptions.from(options);
-        EvaluateStoredRequest body = new EvaluateStoredRequest();
-        body.setContext(vars.toFeelContext());
-        body.setVersion(opts.version);
-        body.setDecisions(opts.decisions);
-        body.setDecisionServices(opts.decisionServices);
-        body.setBusinessId(opts.businessId);
-        return api.evaluateStored(projectId, definitionId, body);
-    }
-
     /** Run ad-hoc DMN XML against an input context. The XML is not stored. */
     public Map<String, EvaluationResult> evaluateDesign(String xml, Vars vars, DesignOption... options) throws ApiException {
         DesignOptions opts = DesignOptions.from(options);

@@ -3,10 +3,13 @@ package com.quantumbpm.client.bpmn;
 import com.quantumbpm.client.generated.ApiException;
 import com.quantumbpm.client.generated.api.BpmnApi;
 import com.quantumbpm.client.generated.api.DefaultApi;
+import com.quantumbpm.client.generated.model.BpmnActivityState;
+import com.quantumbpm.client.generated.model.BpmnHistoryPage;
 import com.quantumbpm.client.generated.model.BpmnInstanceChildrenResponse;
 import com.quantumbpm.client.generated.model.BpmnInstancePaginatedResponse;
 import com.quantumbpm.client.generated.model.BpmnInstanceState;
 import com.quantumbpm.client.generated.model.BpmnProcessSummaryPaginatedResponse;
+import com.quantumbpm.client.generated.model.BpmnProcessVersion;
 import com.quantumbpm.client.generated.model.BpmnProcessVersionPaginatedResponse;
 import com.quantumbpm.client.generated.model.BpmnResourceDetail;
 import com.quantumbpm.client.generated.model.BpmnResourcePaginatedResponse;
@@ -98,87 +101,123 @@ public class BpmnClient {
 
     // ------------------------------------------------------------ Instances
 
-    /** Launch a new BPMN process instance and return the workflow ID. */
-    public String startInstance(UUID processDefinitionId, Vars vars) throws ApiException {
-        return startInstance(processDefinitionId, vars, null);
+    /**
+     * Launch a new instance of the latest version of a deployed BPMN process,
+     * by its process ID, and return the instance ID.
+     */
+    public String startInstance(String processId, Vars vars) throws ApiException {
+        return startInstance(processId, null, vars, null);
     }
 
     /**
-     * Launch a new BPMN process instance, stamping it with a caller-supplied
-     * {@code businessId} correlation key (order number, ticket ID, etc.).
-     * The key is inherited by every child instance, external job, user task,
-     * and DMN execution emitted by the resulting process.
+     * Launch a new instance of the latest version, stamping it with a
+     * caller-supplied {@code businessId} correlation key (order number,
+     * ticket ID, etc.). The key is inherited by every child instance, external
+     * job, user task, and DMN execution emitted by the resulting process.
      */
-    public String startInstance(UUID processDefinitionId, Vars vars, String businessId) throws ApiException {
+    public String startInstance(String processId, Vars vars, String businessId) throws ApiException {
+        return startInstance(processId, null, vars, businessId);
+    }
+
+    /** Launch a new instance of {@code version}, the latest when null. */
+    public String startInstance(String processId, Integer version, Vars vars, String businessId) throws ApiException {
         StartBpmnInstanceRequest body = new StartBpmnInstanceRequest();
-        body.setProcessDefinitionID(processDefinitionId);
+        body.setProcessID(processId);
+        body.setVersion(version);
         body.setVariables(vars.toWireMap());
         body.setBusinessId(businessId);
         var response = defaultApi.startBpmnInstance(projectId, body);
-        if (response == null || response.getWorkflowID() == null) {
-            throw new IllegalStateException("bpmn: startInstance returned no workflowID");
+        if (response == null || response.getInstanceID() == null) {
+            throw new IllegalStateException("bpmn: startInstance returned no instanceID");
         }
-        return response.getWorkflowID();
+        return response.getInstanceID();
     }
 
-    public BpmnInstanceState getInstance(String workflowId) throws ApiException {
-        return defaultApi.getBpmnInstance(projectId, workflowId);
+    public BpmnInstanceState getInstance(String instanceId) throws ApiException {
+        return defaultApi.getBpmnInstance(projectId, instanceId);
     }
 
-    public void cancelInstance(String workflowId) throws ApiException {
-        defaultApi.cancelBpmnInstance(projectId, workflowId);
+    public void cancelInstance(String instanceId) throws ApiException {
+        defaultApi.cancelBpmnInstance(projectId, instanceId);
     }
 
+    /**
+     * List a page of instances, newest first, of one process when
+     * {@code processId} is set, and of one of its versions when
+     * {@code version} is set too. Pass the page's
+     * {@code getPagination().getNextCursor()} as {@code cursor} for the next
+     * one. It is null on the last page.
+     */
     public BpmnInstancePaginatedResponse listInstances(
-            UUID definitionId,
+            String processId,
+            Integer version,
             String status,
             Boolean hasIncident,
             Boolean suspended,
             OffsetDateTime createdAfter,
-            Integer page,
-            Integer pageSize
+            String cursor,
+            Integer limit
     ) throws ApiException {
-        return listInstances(definitionId, status, hasIncident, suspended, createdAfter, null, page, pageSize);
+        return listInstances(processId, version, status, hasIncident, suspended, createdAfter, null, null, cursor, limit);
     }
 
-    /** List instances filtered by a caller-supplied businessId correlation key. */
+    /**
+     * List instances filtered by a caller-supplied businessId correlation
+     * key. {@code draft} true keeps only test runs, false leaves them out.
+     */
     public BpmnInstancePaginatedResponse listInstances(
-            UUID definitionId,
+            String processId,
+            Integer version,
             String status,
             Boolean hasIncident,
             Boolean suspended,
             OffsetDateTime createdAfter,
             String businessId,
-            Integer page,
-            Integer pageSize
+            Boolean draft,
+            String cursor,
+            Integer limit
     ) throws ApiException {
         return defaultApi.listBpmnInstances(
-                projectId, definitionId, status, hasIncident, suspended, createdAfter, businessId, null, page, pageSize);
+                projectId, status, hasIncident, suspended, createdAfter, businessId, processId, version, draft, cursor, limit);
     }
 
-    public BpmnInstanceChildrenResponse getInstanceChildren(String workflowId) throws ApiException {
-        return bpmnApi.getBpmnInstanceChildren(projectId, workflowId);
+    public BpmnInstanceChildrenResponse getInstanceChildren(String instanceId) throws ApiException {
+        return bpmnApi.getBpmnInstanceChildren(projectId, instanceId);
     }
 
-    public Vars getInstanceVariables(String workflowId) throws ApiException {
-        GetBpmnInstanceVariables200Response response = bpmnApi.getBpmnInstanceVariables(projectId, workflowId);
+    /**
+     * One page of the instance's history, oldest entry first. {@code fromSeq}
+     * reads from that seq on, {@code beforeSeq} reads the newest entries
+     * before it, and with both null the page holds the newest entries.
+     */
+    public BpmnHistoryPage getInstanceHistory(String instanceId, Long fromSeq, Long beforeSeq, Integer limit) throws ApiException {
+        return bpmnApi.getBpmnInstanceHistory(projectId, instanceId, fromSeq, beforeSeq, limit);
+    }
+
+    /** One history entry by its seq, with its inputs and outputs. */
+    public BpmnActivityState getInstanceHistoryEntry(String instanceId, long seq) throws ApiException {
+        return bpmnApi.getBpmnInstanceHistoryEntry(projectId, instanceId, seq);
+    }
+
+    public Vars getInstanceVariables(String instanceId) throws ApiException {
+        GetBpmnInstanceVariables200Response response = bpmnApi.getBpmnInstanceVariables(projectId, instanceId);
         if (response == null || response.getVariables() == null) {
             return new Vars();
         }
         return Vars.fromWireMap(response.getVariables());
     }
 
-    public void updateInstanceVariables(String workflowId, Vars vars) throws ApiException {
+    public void updateInstanceVariables(String instanceId, Vars vars) throws ApiException {
         UpdateBpmnInstanceVariablesRequest body = new UpdateBpmnInstanceVariablesRequest();
         Map<String, Object> wire = vars.toWireMap();
         body.setVariables(wire == null ? Map.of() : wire);
-        bpmnApi.updateBpmnInstanceVariables(projectId, workflowId, body);
+        bpmnApi.updateBpmnInstanceVariables(projectId, instanceId, body);
     }
 
-    public void resolveIncident(String workflowId, String incidentId, Vars vars) throws ApiException {
+    public void resolveIncident(String instanceId, String incidentId, Vars vars) throws ApiException {
         GetBpmnInstanceVariables200Response body = new GetBpmnInstanceVariables200Response();
         if (vars != null) body.setVariables(vars.toWireMap());
-        bpmnApi.resolveBpmnIncident(projectId, workflowId, incidentId, body);
+        bpmnApi.resolveBpmnIncident(projectId, instanceId, incidentId, body);
     }
 
     // ------------------------------------------------------------ Messaging
@@ -210,32 +249,67 @@ public class BpmnClient {
 
     // ----------------------------------------------------------- User tasks
 
+    /**
+     * List a page of user tasks. Pass the page's
+     * {@code getPagination().getNextCursor()} as {@code cursor} for the next
+     * one. It is null on the last page.
+     */
     public BpmnUserTaskPaginatedResponse listUserTasks(
-            String workflowId,
+            String instanceId,
             String status,
             String assignee,
             String candidateUser,
             String candidateGroup,
-            Integer page,
-            Integer pageSize) throws ApiException {
-        return listUserTasks(workflowId, status, assignee, candidateUser, candidateGroup, null, page, pageSize);
+            String cursor,
+            Integer limit) throws ApiException {
+        return listUserTasks(instanceId, status, assignee, candidateUser, candidateGroup, null, cursor, limit);
     }
 
     /** List user tasks filtered by a caller-supplied businessId correlation key. */
     public BpmnUserTaskPaginatedResponse listUserTasks(
-            String workflowId,
+            String instanceId,
             String status,
             String assignee,
             String candidateUser,
             String candidateGroup,
             String businessId,
-            Integer page,
-            Integer pageSize) throws ApiException {
-        return bpmnApi.listBpmnUserTasks(projectId, workflowId, status, assignee, candidateUser, candidateGroup, businessId, page, pageSize);
+            String cursor,
+            Integer limit) throws ApiException {
+        return listUserTasks(instanceId, status, assignee, candidateUser, candidateGroup, businessId, null, null, null, cursor, limit);
     }
 
-    public BpmnUserTaskPaginatedResponse listUserTasksForCaller(int page, int pageSize) throws ApiException {
-        return bpmnApi.listBpmnUserTasksForCaller(projectId, page, pageSize);
+    /**
+     * List user tasks due from {@code dueAfter} (included) to {@code dueBefore}
+     * (excluded). {@code sort} is created (the default), dueDate or priority.
+     */
+    public BpmnUserTaskPaginatedResponse listUserTasks(
+            String instanceId,
+            String status,
+            String assignee,
+            String candidateUser,
+            String candidateGroup,
+            String businessId,
+            OffsetDateTime dueAfter,
+            OffsetDateTime dueBefore,
+            String sort,
+            String cursor,
+            Integer limit) throws ApiException {
+        return bpmnApi.listBpmnUserTasks(projectId, instanceId, status, assignee, candidateUser, candidateGroup, businessId, dueAfter, dueBefore, sort, cursor, limit);
+    }
+
+    /** List a page of the user tasks the caller may claim or has claimed. */
+    public BpmnUserTaskPaginatedResponse listUserTasksForCaller(String cursor, Integer limit) throws ApiException {
+        return listUserTasksForCaller(null, null, null, cursor, limit);
+    }
+
+    /** List the caller's user tasks with the due range and sort of {@code listUserTasks}. */
+    public BpmnUserTaskPaginatedResponse listUserTasksForCaller(
+            OffsetDateTime dueAfter,
+            OffsetDateTime dueBefore,
+            String sort,
+            String cursor,
+            Integer limit) throws ApiException {
+        return bpmnApi.listBpmnUserTasksForCaller(projectId, dueAfter, dueBefore, sort, cursor, limit);
     }
 
     public UserTask getUserTask(String executionKey) throws ApiException {
@@ -277,5 +351,9 @@ public class BpmnClient {
     /** {@code suspended} filters by definition-scope suspension: true keeps paused versions, false keeps active ones, null means no filter. */
     public BpmnProcessVersionPaginatedResponse listProcessVersions(String processId, Integer page, Integer pageSize, OffsetDateTime createdAfter, Boolean suspended) throws ApiException {
         return bpmnApi.listBpmnProcessVersions(projectId, processId, page, pageSize, createdAfter, suspended);
+    }
+
+    public BpmnProcessVersion getProcessVersion(String processId, int version, OffsetDateTime createdAfter) throws ApiException {
+        return bpmnApi.getBpmnProcessVersion(projectId, processId, version, createdAfter);
     }
 }

@@ -36,7 +36,7 @@ class WorkerPollTest {
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final String JOBS = "/projects/" + PROJECT_ID + "/bpmn/external-jobs/";
     private static final String ONE_JOB =
-            "[{\"executionKey\":\"k1\",\"workflowID\":\"wf-1\",\"taskType\":\"issue-payout\",\"variables\":{\"amount\":800}}]";
+            "[{\"executionKey\":\"k1\",\"instanceID\":\"wf-1\",\"taskType\":\"issue-payout\",\"variables\":{\"amount\":800}}]";
 
     @Test
     void varsHandlerCompletesAndEmptyPollsLogNothing() throws Exception {

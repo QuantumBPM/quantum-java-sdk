@@ -56,7 +56,7 @@ final class JobTracing {
                         .setParent(parent)
                         .setAttribute("bpmn.task_type", taskType)
                         .setAttribute("bpmn.node_id", raw.getNodeID())
-                        .setAttribute("bpmn.process_instance_id", raw.getWorkflowID())
+                        .setAttribute("bpmn.process_instance_id", raw.getInstanceID())
                         .setAttribute("bpmn.execution_key", raw.getExecutionKey());
         if (raw.getBusinessId() != null && !raw.getBusinessId().isEmpty()) {
             builder.setAttribute("bpmn.business_id", raw.getBusinessId());

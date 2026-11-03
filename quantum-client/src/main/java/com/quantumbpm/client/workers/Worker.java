@@ -335,7 +335,7 @@ public class Worker {
     private void complete(ExternalJob raw, Vars vars) {
         try {
             CompleteBpmnExternalJobRequest body = new CompleteBpmnExternalJobRequest();
-            body.setWorkflowID(raw.getWorkflowID());
+            body.setInstanceID(raw.getInstanceID());
             body.setClientID(clientId);
             body.setVariables(vars.toWireMap());
             defaultApi.completeBpmnExternalJob(projectId, raw.getExecutionKey(), body);
@@ -349,6 +349,7 @@ public class Worker {
     private void throwError(ExternalJob raw, String code, Vars vars, boolean retryable) {
         try {
             ThrowBpmnExternalJobErrorRequest body = new ThrowBpmnExternalJobErrorRequest();
+            body.setInstanceID(raw.getInstanceID());
             body.setErrorCode(code);
             body.setClientID(clientId);
             body.setVariables(vars.toWireMap());

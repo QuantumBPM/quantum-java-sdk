@@ -39,24 +39,4 @@ class DmnBusinessIdTest {
 
         assertEquals("ORDER-42", captured.get().getBusinessId());
     }
-
-    @Test
-    void evaluateByIdSendsBusinessId() throws Exception {
-        AtomicReference<EvaluateStoredRequest> captured = new AtomicReference<>();
-        DefaultApi defaultApi = new DefaultApi(new ApiClient()) {
-            @Override
-            public Map<String, EvaluationResult> evaluateStored(
-                    UUID projectId,
-                    UUID definitionId,
-                    EvaluateStoredRequest body) {
-                captured.set(body);
-                return Map.of();
-            }
-        };
-        DmnClient client = new DmnClient(defaultApi, PROJECT_ID);
-
-        client.evaluateById(UUID.randomUUID(), new Vars(), withBusinessId("ORDER-42"));
-
-        assertEquals("ORDER-42", captured.get().getBusinessId());
-    }
 }
