@@ -5,7 +5,6 @@ import com.quantumbpm.client.generated.api.BpmnApi;
 import com.quantumbpm.client.generated.api.DefaultApi;
 import com.quantumbpm.client.generated.model.BpmnActivityState;
 import com.quantumbpm.client.generated.model.BpmnHistoryPage;
-import com.quantumbpm.client.generated.model.BpmnInstanceChildrenResponse;
 import com.quantumbpm.client.generated.model.BpmnInstancePaginatedResponse;
 import com.quantumbpm.client.generated.model.BpmnInstanceState;
 import com.quantumbpm.client.generated.model.BpmnProcessSummaryPaginatedResponse;
@@ -181,8 +180,13 @@ public class BpmnClient {
                 projectId, status, hasIncident, suspended, createdAfter, businessId, processId, version, draft, cursor, limit);
     }
 
-    public BpmnInstanceChildrenResponse getInstanceChildren(String instanceId) throws ApiException {
-        return bpmnApi.getBpmnInstanceChildren(projectId, instanceId);
+    /**
+     * List a page of the instances this instance spawned via CallActivity,
+     * newest first. Pass the page's {@code getPagination().getNextCursor()} as
+     * {@code cursor} for the next one. It is null on the last page.
+     */
+    public BpmnInstancePaginatedResponse getInstanceChildren(String instanceId, String cursor, Integer limit) throws ApiException {
+        return bpmnApi.getBpmnInstanceChildren(projectId, instanceId, cursor, limit);
     }
 
     /**

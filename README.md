@@ -279,7 +279,7 @@ var state = client.bpmn().getInstance(instanceId);
 System.out.println(state.getStatus());
 
 Vars vars = client.bpmn().getInstanceVariables(instanceId);
-var children = client.bpmn().getInstanceChildren(instanceId);
+var children = client.bpmn().getInstanceChildren(instanceId, null, 50);
 
 // History pages run oldest first. With fromSeq and beforeSeq null a page holds
 // the newest entries, and an entry read by its seq carries its inputs and outputs.
