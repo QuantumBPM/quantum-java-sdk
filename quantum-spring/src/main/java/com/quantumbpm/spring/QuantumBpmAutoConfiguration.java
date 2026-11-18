@@ -15,6 +15,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.core.io.ResourceLoader;
+import org.springframework.core.io.support.ResourcePatternUtils;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 
 /**
@@ -32,6 +34,9 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
  *   <li>A {@link JobWorkerRegistrar} that scans {@link JobWorker} beans and
  *       starts a managed worker, when {@code quantumbpm.worker.enabled} is
  *       true (the default).</li>
+ *   <li>A {@link ModelDeployer} that deploys the files named by
+ *       {@link Deployment} annotations, when {@code quantumbpm.deployment.enabled}
+ *       is true (the default).</li>
  * </ul>
  */
 @AutoConfiguration
@@ -71,6 +76,16 @@ public class QuantumBpmAutoConfiguration {
             ConfigurableListableBeanFactory beanFactory,
             QuantumBpmProperties properties) {
         return new JobWorkerRegistrar(client, beanFactory, properties.getWorker());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "quantumbpm.deployment", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public ModelDeployer quantumBpmModelDeployer(
+            QuantumBPM client,
+            ConfigurableListableBeanFactory beanFactory,
+            ResourceLoader resourceLoader) {
+        return new ModelDeployer(client, beanFactory, ResourcePatternUtils.getResourcePatternResolver(resourceLoader));
     }
 
     private static boolean hasText(String value) {

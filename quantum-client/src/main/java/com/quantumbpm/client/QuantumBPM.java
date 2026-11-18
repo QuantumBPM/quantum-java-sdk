@@ -53,7 +53,7 @@ public final class QuantumBPM {
         this.bpmn = new BpmnClient(defaultApi, bpmnApi, projectId);
     }
 
-    /** DMN evaluation surface. */
+    /** DMN surface - deploying and evaluating definitions. */
     public DmnClient dmn() {
         return dmn;
     }

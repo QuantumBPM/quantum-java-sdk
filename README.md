@@ -33,7 +33,7 @@ Java 21+. The worker runtime uses virtual threads.
 |                           | `com.quantumbpm.client.variables`| `Vars` wrapper with typed accessors and FEEL-context conversion               |
 |                           | `com.quantumbpm.client.workers`  | `Worker`, `Job<T>`, `Handler<T>`, `BpmnError`                                 |
 |                           | `com.quantumbpm.client.generated`| OpenAPI-generated client (use `client.raw()` for unwrapped endpoints)         |
-| `quantum-spring`          | `com.quantumbpm.spring`          | Spring Boot starter, `@JobWorker` annotation, autoconfig                      |
+| `quantum-spring`          | `com.quantumbpm.spring`          | Spring Boot starter, `@JobWorker` and `@Deployment` annotations, autoconfig   |
 
 ## Quick start (plain Java)
 
@@ -76,6 +76,8 @@ quantumbpm:
   worker:
     enabled: true            # default; scans @JobWorker beans
     client-id: billing-svc
+  deployment:
+    enabled: true            # default, deploys the files named by @Deployment
 ```
 
 A handler - register a method with `@JobWorker`:
@@ -116,6 +118,32 @@ public class LoanService {
     }
 }
 ```
+
+### Deploy models on startup
+
+`@Deployment` on any bean class, typically the application class, deploys the matching BPMN and DMN files when the application starts:
+
+```java
+import com.quantumbpm.spring.Deployment;
+
+@SpringBootApplication
+@Deployment(resources = {"classpath*:models/*.dmn", "classpath*:models/*.bpmn"})
+public class LoanApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(LoanApplication.class, args);
+    }
+}
+```
+
+The patterns are Spring resource patterns, and each matched file must end in `.dmn` or `.bpmn`. Each file is saved under its file name and deployed. All DMN files deploy before the BPMN files, so a process never starts before the decisions it calls exist, and both deploy before the job worker starts.
+
+- A file whose XML is identical to the latest deployed version of its `<definitions id>` is skipped, so a restart deploys only what changed.
+- When several instances start at once, the first deploy of a file wins. The others remove their drafts.
+- A pattern that matches no file, a file of another type, or a model the server rejects fails startup. A rejected draft is removed.
+
+The server compares a file with the latest deployed version only. An instance still running older XML deploys it again as a new version when it restarts, for example during a rolling update.
+
+Set `quantumbpm.deployment.enabled: false` to skip the deploy, for example where a pipeline deploys the models.
 
 ## Authentication
 
@@ -198,7 +226,17 @@ TokenProvider provider = () -> myAuth.fetchToken();
 
 ## DMN evaluation
 
-`client.dmn()` exposes four methods.
+`client.dmn()` deploys definitions and evaluates them.
+
+### Deploy a definition
+
+```java
+var draft = client.dmn().createDefinition("loan-eligibility", dmnXml);
+var deployed = client.dmn().deployDefinition(draft.getId());
+// deployed.getVersion() is the version the deploy gave it.
+```
+
+A draft is not evaluable until it is deployed. Saving XML identical to the latest deployed version of its `<definitions id>` throws `ApiException` with code 409, and nothing is saved. In Spring Boot, [`@Deployment`](#deploy-models-on-startup) deploys model files on startup.
 
 ### Evaluate a stored definition
 

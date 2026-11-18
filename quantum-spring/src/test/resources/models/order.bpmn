@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:quantum="http://quantumbpm.com/schema/bpmn" id="order" targetNamespace="https://quantumbpm.com/test">
+  <process id="order_process" isExecutable="true">
+    <startEvent id="start"/>
+    <sequenceFlow id="flow" sourceRef="start" targetRef="end"/>
+    <endEvent id="end"/>
+  </process>
+</definitions>

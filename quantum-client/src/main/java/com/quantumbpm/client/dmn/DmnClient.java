@@ -4,6 +4,8 @@ import com.quantumbpm.client.generated.ApiException;
 import com.quantumbpm.client.generated.api.DefaultApi;
 import com.quantumbpm.client.generated.model.BatchEvaluateDesignRequest;
 import com.quantumbpm.client.generated.model.BatchEvaluationResponse;
+import com.quantumbpm.client.generated.model.CreateDefinitionRequest;
+import com.quantumbpm.client.generated.model.Definition;
 import com.quantumbpm.client.generated.model.EvaluateDesignRequest;
 import com.quantumbpm.client.generated.model.EvaluateStoredRequest;
 import com.quantumbpm.client.generated.model.EvaluationResult;
@@ -14,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Evaluates DMN definitions in a single project. */
+/** Deploys and evaluates DMN definitions in a single project. */
 public class DmnClient {
 
     private final DefaultApi api;
@@ -23,6 +25,26 @@ public class DmnClient {
     public DmnClient(DefaultApi api, UUID projectId) {
         this.api = api;
         this.projectId = projectId;
+    }
+
+    /**
+     * Save DMN XML as a draft, which is not evaluable until
+     * {@link #deployDefinition} deploys it. XML identical to the latest
+     * deployed version of its {@code <definitions id>} is refused with 409.
+     */
+    public Definition createDefinition(String name, String xml) throws ApiException {
+        CreateDefinitionRequest body = new CreateDefinitionRequest();
+        body.setName(name);
+        body.setXml(xml);
+        return api.createDefinition(projectId, body);
+    }
+
+    /**
+     * Deploy a draft and return it with the version it got. A draft identical
+     * to the latest deployed version is refused with 409.
+     */
+    public Definition deployDefinition(UUID definitionId) throws ApiException {
+        return api.deployDefinition(projectId, definitionId);
     }
 
     /**

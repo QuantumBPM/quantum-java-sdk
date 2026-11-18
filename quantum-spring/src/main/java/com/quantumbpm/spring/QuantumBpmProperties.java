@@ -21,6 +21,8 @@ import java.util.List;
  *   worker:
  *     enabled: true                   # registers @JobWorker beans
  *     client-id: billing-svc          # optional; defaults to worker-{host}-{pid}
+ *   deployment:
+ *     enabled: true                   # deploys the files named by @Deployment
  * </pre>
  */
 @ConfigurationProperties(prefix = "quantumbpm")
@@ -37,6 +39,7 @@ public class QuantumBpmProperties {
 
     private Auth auth = new Auth();
     private Worker worker = new Worker();
+    private ModelDeployment deployment = new ModelDeployment();
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
@@ -52,6 +55,9 @@ public class QuantumBpmProperties {
 
     public Worker getWorker() { return worker; }
     public void setWorker(Worker worker) { this.worker = worker; }
+
+    public ModelDeployment getDeployment() { return deployment; }
+    public void setDeployment(ModelDeployment deployment) { this.deployment = deployment; }
 
     public static class Auth {
         private ClientCredentials clientCredentials = new ClientCredentials();
@@ -92,5 +98,13 @@ public class QuantumBpmProperties {
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
         public String getClientId() { return clientId; }
         public void setClientId(String clientId) { this.clientId = clientId; }
+    }
+
+    public static class ModelDeployment {
+        /** Whether to deploy the files named by {@link Deployment} annotations on startup. Default true. */
+        private boolean enabled = true;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
     }
 }
